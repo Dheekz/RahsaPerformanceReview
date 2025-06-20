@@ -11,23 +11,32 @@ import pandas as pd
 
 st.set_page_config(page_title="Aplikasi Performance Review", page_icon="�", layout="wide")
 
-def initialize_firebase():
-    """Menginisialisasi koneksi ke Firebase, hanya dijalankan sekali."""
+# --- Konfigurasi Firebase ---
+try:
+    # Coba inisialisasi hanya jika belum ada
+    firebase_admin.get_app()
+except ValueError:
     try:
-        creds_dict = st.secrets["firebase_credentials"]
+        # --- PERBAIKAN UTAMA DI SINI ---
+        # Ambil kredensial dari secrets.toml. Objek ini bersifat read-only.
+        creds_from_secrets = st.secrets["firebase_credentials"]
+        
+        # Buat salinan yang bisa diubah (mutable copy) dalam bentuk dictionary
+        creds_dict = dict(creds_from_secrets)
+
+        # Perbaiki format private_key di dalam salinan dictionary
+        if 'private_key' in creds_dict:
+            creds_dict['private_key'] = creds_dict['private_key'].replace('\\n', '\n')
+
+        # Inisialisasi Firebase menggunakan dictionary yang sudah diperbaiki
         cred = credentials.Certificate(creds_dict)
         firebase_admin.initialize_app(cred)
-        st.session_state.firebase_initialized = True
-    except (KeyError, ValueError):
-        st.error("Kredensial Firebase tidak ditemukan atau tidak valid di Streamlit Secrets.")
-        st.stop()
-    except Exception as e:
-        if "already exists" not in str(e):
-            st.error(f"Gagal menginisialisasi Firebase: {e}")
-            st.stop()
 
-if 'firebase_initialized' not in st.session_state:
-    initialize_firebase()
+    except Exception as e:
+        st.error("Gagal menginisialisasi Firebase. Pastikan `[firebase_credentials]` ada dan formatnya benar di secrets.toml Anda.")
+        st.error(f"Detail Error: {e}")
+        st.stop()
+
 
 db = firestore.client()
 
