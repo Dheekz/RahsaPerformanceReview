@@ -79,7 +79,6 @@ def get_review_questions(employee_type):
     except Exception as e: return []
 
 def update_review_questions(employee_type, questions_list):
-    """Memperbarui atau membuat daftar pertanyaan di Firestore."""
     try:
         doc_ref = db.collection('review_questions').document(employee_type)
         doc_ref.set({'questions': questions_list})
@@ -109,6 +108,68 @@ def get_my_reviews(reviewee_uid):
         return reviews_list
     except Exception as e: return []
 
+# --- FUNGSI BARU UNTUK PANEL ADMIN ---
+
+def get_all_users():
+    """Mengambil semua pengguna dari koleksi 'users'."""
+    try:
+        users_ref = db.collection('users').stream()
+        # Mengembalikan dictionary {uid: nama}
+        return {user.id: user.to_dict().get('nama', 'Tanpa Nama') for user in users_ref}
+    except Exception as e:
+        st.error(f"Gagal mengambil daftar pengguna: {e}")
+        return {}
+
+def get_all_assignments():
+    """Mengambil semua penugasan yang ada."""
+    try:
+        assignments_ref = db.collection('review_assignments').stream()
+        assignments_list = []
+        all_users = get_all_users() # Ambil semua data user sekali saja
+        for doc in assignments_ref:
+            data = doc.to_dict()
+            reviewer_name = all_users.get(data.get('reviewer_uid'), 'Pengguna Dihapus')
+            reviewee_name = all_users.get(data.get('reviewee_uid'), 'Pengguna Dihapus')
+            assignments_list.append({
+                'id': doc.id,
+                'reviewer_name': reviewer_name,
+                'reviewee_name': reviewee_name
+            })
+        return assignments_list
+    except Exception as e:
+        st.error(f"Gagal mengambil daftar penugasan: {e}")
+        return []
+
+def add_assignment(reviewer_uid, reviewee_uid):
+    """Menambahkan penugasan baru dan memeriksa duplikat."""
+    try:
+        # Cek jika penugasan sudah ada
+        existing_ref = db.collection('review_assignments').where(filter=FieldFilter('reviewer_uid', '==', reviewer_uid)).where(filter=FieldFilter('reviewee_uid', '==', reviewee_uid)).limit(1).stream()
+        if len(list(existing_ref)) > 0:
+            st.warning("Penugasan ini sudah ada.")
+            return False
+        
+        db.collection('review_assignments').add({
+            'reviewer_uid': reviewer_uid,
+            'reviewee_uid': reviewee_uid
+        })
+        st.success("Penugasan berhasil ditambahkan.")
+        return True
+    except Exception as e:
+        st.error(f"Gagal menambahkan penugasan: {e}")
+        return False
+
+def delete_assignment(assignment_id):
+    """Menghapus penugasan berdasarkan ID dokumennya."""
+    try:
+        db.collection('review_assignments').document(assignment_id).delete()
+        st.success("Penugasan berhasil dihapus.")
+        return True
+    except Exception as e:
+        st.error(f"Gagal menghapus penugasan: {e}")
+        return False
+
+
 # --- TAMPILAN APLIKASI ---
 
 if st.session_state.user_info is None:
@@ -124,26 +185,19 @@ if st.session_state.user_info is None:
             if st.form_submit_button("Login"):
                 if username and password:
                     try:
-                        # Logika login yang sudah ada
-                        # Password 'password123' hanya akan bekerja jika user 'Data Rahsa'
-                        # dibuat dengan password tersebut.
                         if username == "Data Rahsa" and password == "password123":
                              users_ref = db.collection('users').where(filter=FieldFilter('username', '==', username)).limit(1).stream()
-                             user_docs = list(users_ref)
-                             if not user_docs:
-                                 st.error("Akun admin 'Data Rahsa' tidak ditemukan di database. Harap daftarkan terlebih dahulu.")
+                             if not (user_docs := list(users_ref)):
+                                 st.error("Akun admin 'Data Rahsa' tidak ditemukan di database.")
                              else:
                                  user_data = user_docs[0].to_dict()
                                  st.session_state.user_info = { "uid": user_data.get('uid'), "email": user_data.get('email'), "username": user_data.get('username'), "nama": user_data.get('nama') }
                                  st.rerun()
-                        else: # Untuk pengguna biasa
+                        else: 
                             users_ref = db.collection('users').where(filter=FieldFilter('username', '==', username)).limit(1).stream()
-                            user_docs = list(users_ref)
-                            if not user_docs:
+                            if not (user_docs := list(users_ref)):
                                 st.error("Username tidak ditemukan.")
                             else:
-                                # Verifikasi password untuk pengguna biasa akan bergantung pada password
-                                # yang digunakan saat registrasi ('unique_code').
                                 user_data = user_docs[0].to_dict()
                                 user = auth.get_user_by_email(user_data.get('email'))
                                 st.session_state.user_info = { "uid": user.uid, "email": user.email, "username": user_data.get('username'), "nama": user_data.get('nama', user.email) }
@@ -175,7 +229,6 @@ else:
     # --- DASHBOARD SETELAH LOGIN ---
     user_info = st.session_state.user_info
     
-    # --- PENAMBAHAN LOGIKA PEMERIKSAAN PERAN ADMIN ---
     is_admin = user_info.get('username') == 'Data Rahsa'
     
     with st.sidebar:
@@ -183,11 +236,9 @@ else:
         st.markdown(f"Selamat datang, **{welcome_name}**")
         st.divider()
         
-        # --- MENU NAVIGASI DINAMIS BERDASARKAN PERAN ---
         menu_options = ["📝 Beri Review", "📊 Lihat Hasil Saya"]
         if is_admin:
             menu_options.append("⚙️ Panel Admin")
-            
         app_mode = st.radio("Menu Navigasi", menu_options)
         
         st.divider()
@@ -250,19 +301,59 @@ else:
             st.header("Kelola Pertanyaan Performance Review")
             q_type = st.selectbox("Pilih tipe karyawan untuk dikelola:", ("office", "operator"), key="q_type")
             
-            # Ambil pertanyaan yang ada saat ini
             current_questions = get_review_questions(q_type)
-            # Gabungkan menjadi satu string untuk ditampilkan di text_area
             questions_text = "\n".join(current_questions)
             
             st.markdown(f"**Edit pertanyaan untuk tipe `{q_type}` di bawah ini (satu pertanyaan per baris):**")
             new_questions_text = st.text_area("Daftar Pertanyaan:", value=questions_text, height=400, key=f"questions_{q_type}")
             
             if st.button("Simpan Perubahan Pertanyaan", key=f"save_{q_type}"):
-                # Pisahkan teks menjadi daftar pertanyaan, abaikan baris kosong
                 updated_questions_list = [line.strip() for line in new_questions_text.split("\n") if line.strip()]
                 update_review_questions(q_type, updated_questions_list)
         
         with admin_tab2:
             st.header("Kelola Penugasan Reviewer")
-            st.write("Fitur ini masih dalam pengembangan.")
+            
+            all_users = get_all_users()
+            user_names = list(all_users.values())
+            user_uids = list(all_users.keys())
+
+            with st.form("add_assignment_form"):
+                col1, col2 = st.columns(2)
+                with col1:
+                    reviewer_name = st.selectbox("Pilih Reviewer:", options=user_names, index=None)
+                with col2:
+                    reviewee_name = st.selectbox("Pilih Reviewee:", options=user_names, index=None)
+                
+                submitted = st.form_submit_button("Tambahkan Penugasan")
+                if submitted:
+                    if reviewer_name and reviewee_name:
+                        if reviewer_name == reviewee_name:
+                            st.error("Reviewer dan Reviewee tidak boleh orang yang sama.")
+                        else:
+                            reviewer_uid = user_uids[user_names.index(reviewer_name)]
+                            reviewee_uid = user_uids[user_names.index(reviewee_name)]
+                            if add_assignment(reviewer_uid, reviewee_uid):
+                                st.rerun() # Muat ulang untuk menampilkan daftar terbaru
+                    else:
+                        st.warning("Harap pilih Reviewer dan Reviewee.")
+
+            st.divider()
+            st.subheader("Daftar Penugasan Saat Ini")
+            
+            assignments = get_all_assignments()
+            if not assignments:
+                st.info("Belum ada penugasan yang dibuat.")
+            else:
+                for assignment in assignments:
+                    col1, col2, col3 = st.columns([3, 1, 3])
+                    with col1:
+                        st.write(f"**{assignment['reviewer_name']}**")
+                    with col2:
+                        st.write("➔")
+                    with col3:
+                        st.write(f"**{assignment['reviewee_name']}**")
+                    # Tombol hapus dengan key unik untuk setiap penugasan
+                    if st.button("Hapus", key=f"del_{assignment['id']}", use_container_width=True):
+                        delete_assignment(assignment['id'])
+                        st.rerun() # Muat ulang untuk menyegarkan daftar
