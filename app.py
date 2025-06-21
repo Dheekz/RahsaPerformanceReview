@@ -99,13 +99,8 @@ def submit_review(reviewer_uid, reviewee_uid, responses):
 def get_my_reviews(reviewee_uid):
     try:
         reviews_ref = db.collection('reviews').where(filter=FieldFilter('reviewee_uid', '==', reviewee_uid)).stream()
-        reviews_list = []
-        for review in reviews_ref:
-            review_data = review.to_dict()
-            reviewer_details = get_user_details(review_data.get('reviewer_uid'))
-            review_data['reviewer_name'] = reviewer_details.get('nama', 'Anonim') if reviewer_details else 'Anonim'
-            reviews_list.append(review_data)
-        return reviews_list
+        # Tidak perlu mengambil nama reviewer lagi untuk anonimitas
+        return [review.to_dict() for review in reviews_ref]
     except Exception as e: return []
 
 # --- FUNGSI BARU UNTUK PANEL ADMIN ---
@@ -272,26 +267,71 @@ else:
                                 submit_review(reviewer_uid, selected_reviewee_uid, responses)
     
     elif app_mode == "📊 Lihat Hasil Saya":
-        # Logika lihat hasil... (tidak berubah)
         st.title("📊 Hasil Performance Review Anda")
+        
         my_reviews = get_my_reviews(user_info['uid'])
-        if not my_reviews: st.info("Belum ada hasil review yang tersedia untuk Anda.")
+        
+        if not my_reviews:
+            st.info("Belum ada hasil review yang tersedia untuk Anda.")
         else:
-            st.markdown(f"Anda memiliki **{len(my_reviews)}** review.")
+            st.markdown(f"Anda telah menerima **{len(my_reviews)}** penilaian. Berikut adalah rinciannya:")
+            
+            # --- Logika baru untuk agregasi dan tampilan ---
+            question_scores = {}
+            total_scores_list = []
+            
+            # Urutkan review dari yang terbaru
             my_reviews.sort(key=lambda r: r['timestamp'], reverse=True)
+            
             for i, review in enumerate(my_reviews):
                 review_date = review['timestamp'].strftime('%d %B %Y, %H:%M')
-                with st.expander(f"**Review dari {review['reviewer_name']}** - `{review_date}`", expanded=(i==0)):
+                
+                # Mengubah judul menjadi anonim
+                with st.expander(f"**Penilaian ke-{i + 1}** (Diterima pada: `{review_date}`)", expanded=(i==0)):
                     scores = {k: v for k, v in review['responses'].items() if isinstance(v, (int, float))}
                     comments = {k: v for k, v in review['responses'].items() if isinstance(v, str)}
+                    
                     if scores:
-                        st.subheader("Penilaian Kuantitatif"); cols = st.columns(3); col_idx = 0
+                        st.subheader("Penilaian Kuantitatif")
+                        # Mengumpulkan skor untuk perhitungan rata-rata
                         for question, score in scores.items():
-                            cols[col_idx].metric(label=question, value=f"{score}/10"); col_idx = (col_idx + 1) % 3
-                        st.divider()
+                            if question not in question_scores:
+                                question_scores[question] = []
+                            question_scores[question].append(score)
+                            total_scores_list.append(score)
+                            
+                            # Menampilkan pertanyaan dan skor secara vertikal
+                            st.markdown(f"<small style='line-height: 1.2;'>{question}</small>", unsafe_allow_html=True)
+                            st.progress(score / 10)
+                            st.caption(f"Skor: {score}/10")
+                            st.markdown("---") # Garis pemisah tipis
+
                     if comments:
-                        st.subheader("Komentar dan Masukan")
-                        for question, comment in comments.items(): st.markdown(f"**{question}**"); st.info(comment)
+                        st.subheader("Komentar dan Masukan Kualitatif")
+                        for question, comment in comments.items():
+                            st.markdown(f"**{question}**")
+                            st.info(comment)
+
+            st.divider()
+            st.header("Ringkasan dan Rata-Rata Penilaian")
+
+            if total_scores_list:
+                # Menghitung dan menampilkan rata-rata keseluruhan
+                overall_average = sum(total_scores_list) / len(total_scores_list)
+                st.metric(label="Rata-Rata Nilai Keseluruhan", value=f"{overall_average:.2f} / 10")
+                st.progress(overall_average / 10)
+                st.markdown("---")
+
+                st.subheader("Rincian Rata-Rata per Item Pertanyaan")
+                # Menghitung dan menampilkan rata-rata per pertanyaan
+                for question, scores_list in question_scores.items():
+                    avg_score = sum(scores_list) / len(scores_list)
+                    st.markdown(f"<small>{question}</small>", unsafe_allow_html=True)
+                    st.text(f"Rata-rata Skor: {avg_score:.2f}")
+                    st.divider()
+            else:
+                st.info("Tidak ada data penilaian kuantitatif untuk dihitung rata-ratanya.")
+
 
     # --- KONTEN PANEL ADMIN DILINDUNGI ---
     elif app_mode == "⚙️ Panel Admin" and is_admin:
