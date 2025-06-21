@@ -120,10 +120,11 @@ def get_all_users():
         st.error(f"Gagal mengambil daftar pengguna: {e}")
         return {}
 
-def get_all_assignments():
-    """Mengambil semua penugasan yang ada."""
+def get_all_assignments(assignment_type):
+    """Mengambil semua penugasan yang ada berdasarkan tipe."""
     try:
-        assignments_ref = db.collection('review_assignments').stream()
+        # Menambahkan filter berdasarkan tipe penugasan
+        assignments_ref = db.collection('review_assignments').where(filter=FieldFilter('assignment_type', '==', assignment_type)).stream()
         assignments_list = []
         all_users = get_all_users() # Ambil semua data user sekali saja
         for doc in assignments_ref:
@@ -140,18 +141,19 @@ def get_all_assignments():
         st.error(f"Gagal mengambil daftar penugasan: {e}")
         return []
 
-def add_assignment(reviewer_uid, reviewee_uid):
-    """Menambahkan penugasan baru dan memeriksa duplikat."""
+def add_assignment(reviewer_uid, reviewee_uid, assignment_type):
+    """Menambahkan penugasan baru dengan tipe dan memeriksa duplikat."""
     try:
         # Cek jika penugasan sudah ada
-        existing_ref = db.collection('review_assignments').where(filter=FieldFilter('reviewer_uid', '==', reviewer_uid)).where(filter=FieldFilter('reviewee_uid', '==', reviewee_uid)).limit(1).stream()
+        existing_ref = db.collection('review_assignments').where(filter=FieldFilter('reviewer_uid', '==', reviewer_uid)).where(filter=FieldFilter('reviewee_uid', '==', reviewee_uid)).where(filter=FieldFilter('assignment_type', '==', assignment_type)).limit(1).stream()
         if len(list(existing_ref)) > 0:
             st.warning("Penugasan ini sudah ada.")
             return False
         
         db.collection('review_assignments').add({
             'reviewer_uid': reviewer_uid,
-            'reviewee_uid': reviewee_uid
+            'reviewee_uid': reviewee_uid,
+            'assignment_type': assignment_type # Menyimpan tipe penugasan
         })
         st.success("Penugasan berhasil ditambahkan.")
         return True
@@ -314,16 +316,25 @@ else:
         with admin_tab2:
             st.header("Kelola Penugasan Reviewer")
             
+            # --- PEMBARUAN: Tambahkan pilihan tipe penugasan ---
+            assignment_type_to_manage = st.radio(
+                "Pilih tipe penugasan untuk dikelola:",
+                ("office", "operator"),
+                horizontal=True,
+                key="assignment_type"
+            )
+
             all_users = get_all_users()
             user_names = list(all_users.values())
             user_uids = list(all_users.keys())
 
             with st.form("add_assignment_form"):
+                st.subheader(f"Tambah Penugasan Baru untuk Tipe: `{assignment_type_to_manage.capitalize()}`")
                 col1, col2 = st.columns(2)
                 with col1:
-                    reviewer_name = st.selectbox("Pilih Reviewer:", options=user_names, index=None)
+                    reviewer_name = st.selectbox("Pilih Reviewer:", options=user_names, index=None, placeholder="Pilih nama...")
                 with col2:
-                    reviewee_name = st.selectbox("Pilih Reviewee:", options=user_names, index=None)
+                    reviewee_name = st.selectbox("Pilih Reviewee:", options=user_names, index=None, placeholder="Pilih nama...")
                 
                 submitted = st.form_submit_button("Tambahkan Penugasan")
                 if submitted:
@@ -333,27 +344,29 @@ else:
                         else:
                             reviewer_uid = user_uids[user_names.index(reviewer_name)]
                             reviewee_uid = user_uids[user_names.index(reviewee_name)]
-                            if add_assignment(reviewer_uid, reviewee_uid):
-                                st.rerun() # Muat ulang untuk menampilkan daftar terbaru
+                            # Kirim tipe penugasan ke fungsi
+                            if add_assignment(reviewer_uid, reviewee_uid, assignment_type_to_manage):
+                                st.rerun() 
                     else:
                         st.warning("Harap pilih Reviewer dan Reviewee.")
 
             st.divider()
-            st.subheader("Daftar Penugasan Saat Ini")
+            st.subheader(f"Daftar Penugasan Saat Ini (Tipe: `{assignment_type_to_manage.capitalize()}`)")
             
-            assignments = get_all_assignments()
+            # Ambil dan tampilkan daftar berdasarkan tipe yang dipilih
+            assignments = get_all_assignments(assignment_type_to_manage)
             if not assignments:
-                st.info("Belum ada penugasan yang dibuat.")
+                st.info("Belum ada penugasan yang dibuat untuk tipe ini.")
             else:
                 for assignment in assignments:
-                    col1, col2, col3 = st.columns([3, 1, 3])
+                    col1, col2, col3, col4 = st.columns([3, 1, 3, 1])
                     with col1:
                         st.write(f"**{assignment['reviewer_name']}**")
                     with col2:
                         st.write("➔")
                     with col3:
                         st.write(f"**{assignment['reviewee_name']}**")
-                    # Tombol hapus dengan key unik untuk setiap penugasan
-                    if st.button("Hapus", key=f"del_{assignment['id']}", use_container_width=True):
-                        delete_assignment(assignment['id'])
-                        st.rerun() # Muat ulang untuk menyegarkan daftar
+                    with col4:
+                         if st.button("Hapus", key=f"del_{assignment['id']}", use_container_width=True):
+                            delete_assignment(assignment['id'])
+                            st.rerun()
