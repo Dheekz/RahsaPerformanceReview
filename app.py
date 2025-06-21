@@ -9,37 +9,28 @@ import pandas as pd
 
 # --- KONFIGURASI DAN INISIALISASI ---
 
-st.set_page_config(page_title="Aplikasi Performance Review", page_icon="�", layout="wide")
+st.set_page_config(page_title="Aplikasi Performance Review", page_icon="📊", layout="wide")
 
-# --- Konfigurasi Firebase ---
-try:
-    # Coba inisialisasi hanya jika belum ada
-    firebase_admin.get_app()
-except ValueError:
+# --- INISIALISASI FIREBASE (LOGIKA BARU YANG LEBIH ROBUST) ---
+# Pengecekan `if not firebase_admin._apps:` adalah cara paling andal untuk
+# menghindari error "app already exists" di lingkungan Streamlit.
+if not firebase_admin._apps:
     try:
-        # --- PERBAIKAN UTAMA DI SINI ---
-        # Ambil kredensial dari secrets.toml. Objek ini bersifat read-only.
-        creds_from_secrets = st.secrets["firebase_credentials"]
-        
-        # Buat salinan yang bisa diubah (mutable copy) dalam bentuk dictionary
-        creds_dict = dict(creds_from_secrets)
-
-        # Perbaiki format private_key di dalam salinan dictionary
-        if 'private_key' in creds_dict:
-            creds_dict['private_key'] = creds_dict['private_key'].replace('\\n', '\n')
-
-        # Inisialisasi Firebase menggunakan dictionary yang sudah diperbaiki
+        creds_dict = st.secrets["firebase_credentials"]
         cred = credentials.Certificate(creds_dict)
         firebase_admin.initialize_app(cred)
-
+    except (KeyError, ValueError):
+        st.error("Kredensial Firebase tidak ditemukan atau tidak valid di Streamlit Secrets.")
+        st.info("Harap periksa kembali pengaturan 'Secrets' di dasbor aplikasi Streamlit Cloud Anda.")
+        st.stop()
     except Exception as e:
-        st.error("Gagal menginisialisasi Firebase. Pastikan `[firebase_credentials]` ada dan formatnya benar di secrets.toml Anda.")
-        st.error(f"Detail Error: {e}")
+        st.error(f"Terjadi kesalahan kritis saat menginisialisasi Firebase: {e}")
         st.stop()
 
-
+# Dapatkan klien Firestore setelah inisialisasi dipastikan berhasil
 db = firestore.client()
 
+# Inisialisasi session state untuk menyimpan info login
 if 'user_info' not in st.session_state:
     st.session_state.user_info = None
 
@@ -50,17 +41,13 @@ def register_user(employee_type, data):
     username = data['username']
     password = data['password']
     
-    # Validasi: Cek apakah username sudah ada
     users_ref = db.collection('users').where(filter=FieldFilter('username', '==', username)).limit(1).stream()
     if len(list(users_ref)) > 0:
         st.error(f"Username '{username}' sudah digunakan. Harap pilih username lain.")
         return False
         
     try:
-        # Buat email dummy karena Firebase Auth membutuhkannya
         dummy_email = f"{username.lower().replace(' ', '_')}@performance.review"
-
-        # Buat pengguna di Firebase Authentication
         user = auth.create_user(
             email=dummy_email,
             password=password,
@@ -68,31 +55,33 @@ def register_user(employee_type, data):
         )
         st.success(f"Pengguna '{username}' berhasil dibuat di sistem autentikasi.")
 
-        # Siapkan data untuk disimpan di Firestore
         firestore_data = {
             'uid': user.uid,
             'employee_id': data['employee_id'],
             'nama': data['nama'],
             'username': username,
-            'email': dummy_email, # Simpan email dummy untuk referensi
+            'email': dummy_email,
             'job_position': data['job_position'],
             'tipe_karyawan': employee_type
         }
         
-        # Tambahkan field spesifik untuk tipe 'office'
         if employee_type == 'office':
             firestore_data['organization'] = data['organization']
             firestore_data['job_level'] = data['job_level']
 
-        # Simpan data ke Firestore
         db.collection('users').document(user.uid).set(firestore_data)
         st.success(f"Detail untuk '{username}' berhasil disimpan di database.")
         return True
 
     except Exception as e:
         st.error(f"Registrasi gagal: {e}")
+        # Jika user di Auth sudah terbuat tapi gagal simpan ke DB, coba hapus user Auth
+        try:
+            auth.delete_user(user.uid)
+            st.warning("Rollback: Pengguna yang baru dibuat di sistem autentikasi telah dihapus karena gagal menyimpan ke database.")
+        except Exception:
+            pass # Abaikan jika gagal hapus
         return False
-
 
 def get_user_details(uid):
     try:
@@ -170,17 +159,16 @@ if st.session_state.user_info is None:
                             email = user_data.get('email')
                             user = auth.get_user_by_email(email)
                             st.session_state.user_info = { "uid": user.uid, "email": user.email, "username": user_data.get('username'), "nama": user_data.get('nama', user.email) }
-                            st.success("Login berhasil!")
                             st.rerun()
                     except Exception as e:
-                        st.error(f"Login Gagal: Password salah atau terjadi kesalahan sistem.")
+                        st.error(f"Login Gagal: Password salah atau terjadi kesalahan sistem. Detail: {e}")
 
     with register_tab:
         st.subheader("Formulir Pendaftaran")
-        reg_type = st.radio("Pilih Tipe Karyawan:", ("Office", "Operator"), horizontal=True, help="Formulir akan menyesuaikan berdasarkan tipe yang dipilih.")
+        reg_type = st.radio("Pilih Tipe Karyawan:", ("Office", "Operator"), horizontal=True, key="reg_type", help="Formulir akan menyesuaikan berdasarkan tipe yang dipilih.")
 
         if reg_type == "Office":
-            with st.form("register_office_form", clear_on_submit=True):
+            with st.form("register_office_form"):
                 st.markdown("**Formulir untuk Karyawan Office**")
                 employee_id = st.text_input("Employee ID")
                 nama = st.text_input("Nama Karyawan (akan menjadi Username)")
@@ -191,12 +179,13 @@ if st.session_state.user_info is None:
                 if st.form_submit_button("Daftarkan Karyawan Office"):
                     if all([employee_id, nama, organization, job_position, job_level, unique_code]):
                         data = {'employee_id': employee_id, 'nama': nama, 'username': nama, 'organization': organization, 'job_position': job_position, 'job_level': job_level, 'password': unique_code}
-                        register_user('office', data)
+                        if register_user('office', data):
+                            st.success("Registrasi berhasil! Silakan login di tab sebelah.")
                     else:
                         st.warning("Harap isi semua field.")
 
         elif reg_type == "Operator":
-            with st.form("register_operator_form", clear_on_submit=True):
+            with st.form("register_operator_form"):
                 st.markdown("**Formulir untuk Karyawan Operator**")
                 employee_id = st.text_input("Employee ID")
                 nama = st.text_input("Nama Karyawan (akan digunakan sebagai Username)")
@@ -205,12 +194,12 @@ if st.session_state.user_info is None:
                 if st.form_submit_button("Daftarkan Karyawan Operator"):
                     if all([employee_id, nama, job_position, unique_code]):
                         data = {'employee_id': employee_id, 'nama': nama, 'username': nama, 'job_position': job_position, 'password': unique_code}
-                        register_user('operator', data)
+                        if register_user('operator', data):
+                            st.success("Registrasi berhasil! Silakan login di tab sebelah.")
                     else:
                         st.warning("Harap isi semua field.")
 
 else:
-    # --- BAGIAN DASHBOARD SETELAH LOGIN (TIDAK BERUBAH) ---
     user_info = st.session_state.user_info
     
     with st.sidebar:
@@ -225,12 +214,9 @@ else:
 
     if app_mode == "📝 Beri Review":
         st.title("📝 Dashboard Performance Review")
-        # Sisa logika untuk memberi review... (tidak diubah)
         reviewer_uid = user_info['uid']
         reviewees = get_assigned_reviewees(reviewer_uid)
-
-        if not reviewees:
-            st.warning("Saat ini tidak ada reviewee yang ditugaskan untuk Anda.")
+        if not reviewees: st.warning("Saat ini tidak ada reviewee yang ditugaskan untuk Anda.")
         else:
             selected_reviewee_uid = st.selectbox("Pilih Karyawan:", options=list(reviewees.keys()), format_func=lambda uid: reviewees[uid], index=None, placeholder="Pilih nama karyawan...")
             if selected_reviewee_uid:
@@ -251,7 +237,6 @@ else:
     
     elif app_mode == "📊 Lihat Hasil Saya":
         st.title("📊 Hasil Performance Review Anda")
-        # Sisa logika untuk melihat hasil... (tidak diubah)
         my_reviews = get_my_reviews(user_info['uid'])
         if not my_reviews: st.info("Belum ada hasil review yang tersedia untuk Anda.")
         else:
