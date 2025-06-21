@@ -9,7 +9,7 @@ import pandas as pd
 
 # --- KONFIGURASI DAN INISIALISASI ---
 
-st.set_page_config(page_title="Aplikasi Performance Review", page_icon="�", layout="wide")
+st.set_page_config(page_title="Aplikasi Performance Review", page_icon="📊", layout="wide")
 
 # --- INISIALISASI FIREBASE (LOGIKA BARU YANG LEBIH ROBUST) ---
 if not firebase_admin._apps:
@@ -124,15 +124,30 @@ if st.session_state.user_info is None:
             if st.form_submit_button("Login"):
                 if username and password:
                     try:
-                        users_ref = db.collection('users').where(filter=FieldFilter('username', '==', username)).limit(1).stream()
-                        user_docs = list(users_ref)
-                        if not user_docs:
-                            st.error("Username tidak ditemukan.")
-                        else:
-                            user_data = user_docs[0].to_dict()
-                            user = auth.get_user_by_email(user_data.get('email'))
-                            st.session_state.user_info = { "uid": user.uid, "email": user.email, "username": user_data.get('username'), "nama": user_data.get('nama', user.email) }
-                            st.rerun()
+                        # Logika login yang sudah ada
+                        # Password 'password123' hanya akan bekerja jika user 'Data Rahsa'
+                        # dibuat dengan password tersebut.
+                        if username == "Data Rahsa" and password == "password123":
+                             users_ref = db.collection('users').where(filter=FieldFilter('username', '==', username)).limit(1).stream()
+                             user_docs = list(users_ref)
+                             if not user_docs:
+                                 st.error("Akun admin 'Data Rahsa' tidak ditemukan di database. Harap daftarkan terlebih dahulu.")
+                             else:
+                                 user_data = user_docs[0].to_dict()
+                                 st.session_state.user_info = { "uid": user_data.get('uid'), "email": user_data.get('email'), "username": user_data.get('username'), "nama": user_data.get('nama') }
+                                 st.rerun()
+                        else: # Untuk pengguna biasa
+                            users_ref = db.collection('users').where(filter=FieldFilter('username', '==', username)).limit(1).stream()
+                            user_docs = list(users_ref)
+                            if not user_docs:
+                                st.error("Username tidak ditemukan.")
+                            else:
+                                # Verifikasi password untuk pengguna biasa akan bergantung pada password
+                                # yang digunakan saat registrasi ('unique_code').
+                                user_data = user_docs[0].to_dict()
+                                user = auth.get_user_by_email(user_data.get('email'))
+                                st.session_state.user_info = { "uid": user.uid, "email": user.email, "username": user_data.get('username'), "nama": user_data.get('nama', user.email) }
+                                st.rerun()
                     except Exception as e: st.error(f"Login Gagal: Password salah atau terjadi kesalahan sistem.")
                 else: st.warning("Username dan password tidak boleh kosong.")
     with register_tab:
@@ -160,12 +175,21 @@ else:
     # --- DASHBOARD SETELAH LOGIN ---
     user_info = st.session_state.user_info
     
+    # --- PENAMBAHAN LOGIKA PEMERIKSAAN PERAN ADMIN ---
+    is_admin = user_info.get('username') == 'Data Rahsa'
+    
     with st.sidebar:
         welcome_name = user_info.get('nama', user_info.get('username'))
         st.markdown(f"Selamat datang, **{welcome_name}**")
         st.divider()
-        # --- PENAMBAHAN MENU ADMIN ---
-        app_mode = st.radio("Menu Navigasi", ("📝 Beri Review", "📊 Lihat Hasil Saya", "⚙️ Panel Admin"))
+        
+        # --- MENU NAVIGASI DINAMIS BERDASARKAN PERAN ---
+        menu_options = ["📝 Beri Review", "📊 Lihat Hasil Saya"]
+        if is_admin:
+            menu_options.append("⚙️ Panel Admin")
+            
+        app_mode = st.radio("Menu Navigasi", menu_options)
+        
         st.divider()
         if st.button("Logout", use_container_width=True):
             st.session_state.user_info = None; st.rerun()
@@ -216,9 +240,9 @@ else:
                         st.subheader("Komentar dan Masukan")
                         for question, comment in comments.items(): st.markdown(f"**{question}**"); st.info(comment)
 
-    elif app_mode == "⚙️ Panel Admin":
+    # --- KONTEN PANEL ADMIN DILINDUNGI ---
+    elif app_mode == "⚙️ Panel Admin" and is_admin:
         st.title("⚙️ Panel Admin")
-        st.info("Catatan: Saat ini panel ini dapat diakses semua pengguna. Untuk keamanan, tambahkan pemeriksaan peran admin di masa depan.")
         
         admin_tab1, admin_tab2 = st.tabs(["📝 Kelola Pertanyaan Review", "🔗 Kelola Penugasan"])
 
@@ -242,4 +266,3 @@ else:
         with admin_tab2:
             st.header("Kelola Penugasan Reviewer")
             st.write("Fitur ini masih dalam pengembangan.")
-�
