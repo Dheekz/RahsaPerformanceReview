@@ -9,7 +9,7 @@ import pandas as pd
 
 # --- KONFIGURASI DAN INISIALISASI ---
 
-st.set_page_config(page_title="Aplikasi Performance Review", page_icon="📊", layout="wide")
+st.set_page_config(page_title="Aplikasi Performance Review PT. Bhinneka Rahsa Nusantara", page_icon="📊", layout="wide")
 
 # --- INISIALISASI FIREBASE (LOGIKA BARU YANG LEBIH ROBUST) ---
 try:
@@ -187,7 +187,7 @@ def delete_assignment(assignment_id):
 # --- TAMPILAN APLIKASI ---
 
 if st.session_state.user_info is None:
-    st.title("Selamat Datang di Aplikasi Performance Review")
+    st.title("Selamat Datang di Aplikasi Performance Review Rahsa Nusantara")
     
     login_tab, register_tab = st.tabs(["🔐 Login", "✍️ Registrasi Karyawan Baru"])
     # Logika login dan registrasi... (tidak berubah)
