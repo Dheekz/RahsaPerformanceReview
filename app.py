@@ -357,7 +357,7 @@ else:
                 if not employee_type: st.error("Tipe karyawan tidak ditemukan.")
                 else:
                     st.divider()
-                    st.header(f"Formulir untuk: {reviewee[selected_reviewee_uid]} ({employee_type.capitalize()})")
+                    st.header(f"Formulir untuk: {pending_reviewees[selected_reviewee_uid]} ({employee_type.capitalize()})")
                     questions = get_review_questions(employee_type)
                     if questions:
                         with st.form("review_form", clear_on_submit=True):
