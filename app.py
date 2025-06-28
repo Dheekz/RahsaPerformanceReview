@@ -303,26 +303,19 @@ else:
                     if questions:
                         with st.form("review_form", clear_on_submit=True):
                             
-                            # --- PERUBAHAN 1: Menambahkan panduan penilaian ---
                             if employee_type == 'office':
                                 st.info(
                                     """
                                     *Before you fill the performance scoring session, please keep in mind that this is a scale-based score. The scale interpretation as mentioned below:*
-                                    
                                     *Sebelum mengisi sesi penilaian performa, mohon diingat bahwa ini merupakan penilaian berbasis skala. Skala yang digunakan memiliki interpretasi sebagai berikut:*
-                                    
                                     ---
-                                    
                                     - **1 = high-improvement needed** (*perlu banyak pengembangan*)
                                     - **2 = small-improvement needed** (*masih perlu pengembangan*)
                                     - **3 = target achieved** (*memenuhi target*)
                                     - **4 = more than achieved** (*memenuhi diatas target*)
                                     - **5 = excellently achieved** (*sangat melebihi target*)
-                                    
                                     ---
-                                    
                                     Guidelines lebih lengkap mengenai skala penilaian dapat dicek di [bit.ly/RN_PRGuidelines](https://bit.ly/RN_PRGuidelines)
-                                    
                                     Teman-teman diharapkan dapat menilai dengan menjawab pertanyaan dengan se-objektif mungkin dan sesuai dengan keadaan sebenar-benarnya. Informasi mengenai hal ini bersifat *confidential* akan di-keep oleh tim PnC dan dijamin kerahasiaannya.
                                     """
                                 )
@@ -336,39 +329,56 @@ else:
                                 max_rating = 3
                                 default_rating = 2
                             
-                            st.markdown(f"**Petunjuk Penilaian:**")
+                            st.markdown(f"**Bagian I: Penilaian Kuantitatif**")
                             
-                            # --- PERUBAHAN 2: Mengubah cara menampilkan pertanyaan dan slider ---
                             responses = {}
                             for i, q in enumerate(questions):
                                 question_label = q
-                                # Cek jika ada pemisah '|' untuk format bilingual
                                 if '|' in q:
                                     parts = q.split('|')
                                     english_q = parts[0].strip()
                                     indonesian_q = parts[1].strip()
-                                    # Format dengan Markdown: Inggris (bold) dan Indonesia (kecil)
                                     question_label = f"**{english_q}**<br><small>{indonesian_q}</small>"
                                 
-                                # Tampilkan label pertanyaan menggunakan markdown
                                 st.markdown(question_label, unsafe_allow_html=True)
                                 
-                                # Tampilkan slider dengan label tersembunyi
                                 score = st.slider(
-                                    label=f"slider_for_{i}", # Label unik untuk internal Streamlit
+                                    label=f"slider_for_{i}", 
                                     min_value=1, 
                                     max_value=max_rating, 
                                     value=default_rating, 
                                     key=f"q_{i}",
-                                    label_visibility="collapsed" # Sembunyikan label slider
+                                    label_visibility="collapsed"
                                 )
                                 responses[q] = score
-                                st.divider() # Tambahkan pemisah antar pertanyaan
+                                st.divider()
                             
-                            general_comments = st.text_area("Komentar Umum (Opsional):", height=150)
+                            st.markdown(f"**Bagian II: Penilaian Kualitatif (Wajib Diisi)**")
+                            
+                            # --- PERUBAHAN 1: Kolom Komentar menjadi wajib dengan panduan ---
+                            comment = st.text_area("Comment (Komentar)", height=150)
+                            st.caption("""
+                            Silakan masukan beberapa catatan yang perlu untuk diketahui karyawan ini, boleh juga menggunakan metode I like (apa yang saya suka dari karyawan ini), I wonder (apa yang saya pikir baik untuk karyawan ini jika ia lakukan/miliki), dan I wish (apa yang saya pikir karyawan ini harus lakukan/miliki) dalam kolom komentar.
+                            
+                            *Contoh: Karyawan ini sangat positif dalam bekerja baik secara individu maupun dalam tim. Ia menyelesaikan pekerjaannya dengan cepat dan berkualitas. Akan baik jika karyawan ini bisa lebih menguasai tentang metode-metode yang mendukung pekerjaannya.*
+                            """)
+
+                            # --- PERUBAHAN 2: Kolom Saran Pengembangan baru dan wajib dengan panduan ---
+                            dev_suggestion = st.text_area("Saran Pengembangan", height=150)
+                            st.caption("""
+                            Silakan masukan saran pengembangan untuk karyawan ini, dapat berupa arahan teknis atau jenis pelatihan yang perlu untuk diikuti oleh karyawan ini.
+                            
+                            *Contoh: Karyawan ini akan baik jika mengikuti training Scrum dan Design Thinking.*
+                            """)
+
                             if st.form_submit_button("Kirim Review"):
-                                if general_comments: responses['Komentar Umum'] = general_comments
-                                submit_review(reviewer_uid, selected_reviewee_uid, responses)
+                                # --- PERUBAHAN 3: Validasi input wajib ---
+                                if comment and dev_suggestion:
+                                    responses['Komentar'] = comment
+                                    responses['Saran Pengembangan'] = dev_suggestion
+                                    submit_review(reviewer_uid, selected_reviewee_uid, responses)
+                                else:
+                                    st.error("Mohon isi bagian 'Comment (Komentar)' dan 'Saran Pengembangan'. Keduanya wajib diisi.")
     
     elif app_mode == "📊 Lihat Hasil Saya":
         st.title("📊 Hasil Performance Review Anda")
@@ -408,7 +418,6 @@ else:
                             question_scores[question].append(score)
                             total_scores_list.append(score)
                             
-                            # Logika tampilan bilingual juga di halaman hasil
                             question_display = question
                             if '|' in question:
                                 parts = question.split('|')
@@ -419,11 +428,19 @@ else:
                             st.caption(f"Skor: {score}/{max_value}")
                             st.markdown("---") 
 
+                    # --- PERUBAHAN 4: Tampilan hasil kualitatif yang lebih terstruktur ---
                     if comments:
-                        st.subheader("Komentar dan Masukan Kualitatif")
-                        for question, comment in comments.items():
-                            st.markdown(f"**{question}**")
-                            st.info(comment)
+                        st.subheader("Masukan Kualitatif")
+                        
+                        # Cek untuk data lama ('Komentar Umum') dan data baru ('Komentar')
+                        comment_text = comments.get('Komentar') or comments.get('Komentar Umum')
+                        if comment_text:
+                            st.markdown("**Comment (Komentar)**")
+                            st.info(comment_text)
+
+                        if 'Saran Pengembangan' in comments:
+                            st.markdown("**Saran Pengembangan**")
+                            st.info(comments['Saran Pengembangan'])
 
             st.divider()
             st.header("Ringkasan dan Rata-Rata Penilaian")
@@ -465,15 +482,11 @@ else:
             st.header("Kelola Pertanyaan Performance Review")
             q_type = st.selectbox("Pilih tipe karyawan untuk dikelola:", ("office", "operator"), key="q_type")
             
-            # --- Penjelasan format bilingual di panel admin ---
             st.warning("""
             **Tips untuk pertanyaan bilingual (Inggris & Indonesia):**
             Untuk menampilkan pertanyaan dalam dua bahasa, gunakan pemisah `|` (garis vertikal).
-            
             **Format:** `Pertanyaan Bahasa Inggris | Pertanyaan Bahasa Indonesia`
-            
             **Contoh:** `Teamwork & Collaboration | Kerjasama & Kolaborasi dalam Tim`
-            
             Jika tidak menggunakan pemisah `|`, pertanyaan akan ditampilkan dalam satu baris seperti biasa.
             """)
 
