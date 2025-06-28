@@ -89,6 +89,16 @@ def get_assigned_reviewees(reviewer_uid):
         return reviewee_details
     except Exception as e: return {}
 
+# --- FUNGSI BARU UNTUK MENYEMBUNYIKAN KARYAWAN YANG SUDAH DIREVIEW ---
+def get_reviewed_uids(reviewer_uid):
+    """Mengambil set UID dari reviewee yang sudah direview oleh reviewer."""
+    try:
+        reviews_ref = db.collection('reviews').where(filter=FieldFilter('reviewer_uid', '==', reviewer_uid)).stream()
+        return {doc.to_dict().get('reviewee_uid') for doc in reviews_ref}
+    except Exception as e:
+        st.error(f"Gagal memuat data review: {e}")
+        return set()
+
 def get_review_questions(employee_type):
     try:
         doc = db.collection('review_questions').document(employee_type).get()
@@ -119,6 +129,40 @@ def get_my_reviews(reviewee_uid):
         # Tidak perlu mengambil nama reviewer lagi untuk anonimitas
         return [review.to_dict() for review in reviews_ref]
     except Exception as e: return []
+
+# --- FUNGSI BARU UNTUK FITUR ULASAN APLIKASI ---
+def has_user_submitted_feedback(uid):
+    """Mengecek apakah user sudah pernah submit feedback aplikasi."""
+    user_details = get_user_details(uid)
+    return user_details.get('app_feedback_submitted', False)
+
+@firestore.transactional
+def submit_app_feedback_transaction(transaction, uid, user_nama, rating, suggestion):
+    """Menyimpan feedback dan update status user dalam satu transaksi."""
+    # 1. Simpan feedback ke koleksi baru
+    feedback_ref = db.collection('app_feedback').document()
+    transaction.set(feedback_ref, {
+        'user_uid': uid,
+        'user_nama': user_nama,
+        'ease_of_use_rating': rating,
+        'suggestion': suggestion,
+        'timestamp': firestore.SERVER_TIMESTAMP
+    })
+    
+    # 2. Update status di dokumen user
+    user_ref = db.collection('users').document(uid)
+    transaction.update(user_ref, {'app_feedback_submitted': True})
+
+def process_app_feedback_submission(uid, user_nama, rating, suggestion):
+    """Wrapper untuk memanggil transaksi."""
+    try:
+        transaction = db.transaction()
+        submit_app_feedback_transaction(transaction, uid, user_nama, rating, suggestion)
+        st.success("Terima kasih! Ulasan Anda telah berhasil dikirim.")
+        return True
+    except Exception as e:
+        st.error(f"Terjadi kesalahan saat mengirim ulasan: {e}")
+        return False
 
 # --- FUNGSI BARU UNTUK PANEL ADMIN ---
 
@@ -259,7 +303,6 @@ if st.session_state.user_info is None:
 else:
     # --- DASHBOARD SETELAH LOGIN ---
     user_info = st.session_state.user_info
-    
     is_admin = user_info.get('username') == 'Data Rahsa'
     
     with st.sidebar:
@@ -267,7 +310,8 @@ else:
         st.markdown(f"Selamat datang, **{welcome_name}**")
         st.divider()
         
-        menu_options = ["📝 Beri Review", "📊 Lihat Hasil Saya"]
+        # --- PERUBAHAN 1: Menambahkan menu baru "Beri Ulasan Aplikasi" ---
+        menu_options = ["📝 Beri Review", "📊 Lihat Hasil Saya", "⭐ Beri Ulasan Aplikasi"]
         if is_admin:
             menu_options.append("⚙️ Panel Admin")
         app_mode = st.radio("Menu Navigasi", menu_options)
@@ -288,10 +332,25 @@ else:
         )
 
         reviewer_uid = user_info['uid']
-        reviewees = get_assigned_reviewees(reviewer_uid)
-        if not reviewees: st.warning("Saat ini tidak ada reviewee yang ditugaskan untuk Anda.")
+        # --- PERUBAHAN 2: Logika untuk memfilter karyawan yang sudah direview ---
+        all_assigned_reviewees = get_assigned_reviewees(reviewer_uid)
+        reviewed_uids = get_reviewed_uids(reviewer_uid)
+        
+        pending_reviewees = {
+            uid: name for uid, name in all_assigned_reviewees.items() if uid not in reviewed_uids
+        }
+
+        if not pending_reviewees:
+            st.success("✅ Anda telah menyelesaikan semua review yang ditugaskan. Terima kasih atas partisipasi Anda!")
         else:
-            selected_reviewee_uid = st.selectbox("Pilih Karyawan:", options=list(reviewees.keys()), format_func=lambda uid: reviewees[uid], index=None, placeholder="Pilih nama karyawan...")
+            selected_reviewee_uid = st.selectbox(
+                "Pilih Karyawan untuk Dinilai:", 
+                options=list(pending_reviewees.keys()), 
+                format_func=lambda uid: pending_reviewees[uid], 
+                index=None, 
+                placeholder="Pilih nama karyawan..."
+            )
+            
             if selected_reviewee_uid:
                 reviewee_details = get_user_details(selected_reviewee_uid)
                 employee_type = reviewee_details.get('tipe_karyawan') if reviewee_details else None
@@ -376,7 +435,10 @@ else:
                                 if comment and dev_suggestion:
                                     responses['Komentar'] = comment
                                     responses['Saran Pengembangan'] = dev_suggestion
-                                    submit_review(reviewer_uid, selected_reviewee_uid, responses)
+                                    if submit_review(reviewer_uid, selected_reviewee_uid, responses):
+                                        st.toast("Review berhasil dikirim! ✅")
+                                        time.sleep(1) # Jeda singkat agar toast terlihat
+                                        st.rerun()
                                 else:
                                     st.error("Mohon isi bagian 'Comment (Komentar)' dan 'Saran Pengembangan'. Keduanya wajib diisi.")
     
@@ -472,6 +534,48 @@ else:
                     st.divider()
             else:
                 st.info("Tidak ada data penilaian kuantitatif untuk dihitung rata-ratanya.")
+
+    # --- PERUBAHAN 4: Halaman baru untuk ulasan aplikasi ---
+    elif app_mode == "⭐ Beri Ulasan Aplikasi":
+        st.title("⭐ Ulasan Penggunaan Aplikasi")
+        st.markdown("Kami sangat menghargai masukan Anda untuk membuat platform ini lebih baik lagi di masa mendatang.")
+        st.divider()
+
+        # Cek apakah user sudah pernah submit
+        if has_user_submitted_feedback(user_info['uid']):
+            st.success("✅ Terima kasih! Anda sudah pernah memberikan ulasan untuk aplikasi ini.")
+            st.info("Setiap pengguna hanya dapat memberikan ulasan sebanyak satu kali.")
+        else:
+            with st.form("app_feedback_form"):
+                st.subheader("Seberapa mudah penggunaan platform ini untuk performance review?")
+                ease_of_use = st.radio(
+                    "Pilih salah satu:",
+                    options=[
+                        "4 - Sangat Mudah",
+                        "3 - Mudah",
+                        "2 - Agak Sulit",
+                        "1 - Sangat Sulit"
+                    ],
+                    index=None,
+                    label_visibility="collapsed"
+                )
+
+                st.subheader("Apakah ada saran untuk pelaksanaan Performance Review berikutnya?")
+                suggestion = st.text_area(
+                    "Saran Anda (opsional)",
+                    placeholder="Tulis saran Anda di sini..."
+                )
+
+                submitted = st.form_submit_button("Kirim Ulasan")
+                if submitted:
+                    if not ease_of_use:
+                        st.warning("Mohon pilih tingkat kemudahan penggunaan platform.")
+                    else:
+                        # Ekstrak angka rating dari string
+                        rating_value = int(ease_of_use.split(" - ")[0])
+                        if process_app_feedback_submission(user_info['uid'], user_info['nama'], rating_value, suggestion):
+                            time.sleep(1)
+                            st.rerun()
 
     elif app_mode == "⚙️ Panel Admin" and is_admin:
         st.title("⚙️ Panel Admin")
