@@ -411,84 +411,86 @@ else:
                                 )
                                 responses[q] = score
                                 st.divider()
-                            
-                            st.markdown(f"**Bagian II: Penilaian Kualitatif (Wajib Diisi)**")
-                            
-                            # --- PERUBAHAN 1: Kolom Komentar menjadi wajib dengan panduan ---
-                            comment = st.text_area("Comment (Komentar)", height=150)
-                            st.caption("""
-                            Silakan masukan beberapa catatan yang perlu untuk diketahui karyawan ini, boleh juga menggunakan metode I like (apa yang saya suka dari karyawan ini), I wonder (apa yang saya pikir baik untuk karyawan ini jika ia lakukan/miliki), dan I wish (apa yang saya pikir karyawan ini harus lakukan/miliki) dalam kolom komentar.
-                            
-                            *Contoh: Karyawan ini sangat positif dalam bekerja baik secara individu maupun dalam tim. Ia menyelesaikan pekerjaannya dengan cepat dan berkualitas. Akan baik jika karyawan ini bisa lebih menguasai tentang metode-metode yang mendukung pekerjaannya.*
-                            """)
 
-                            # --- PERUBAHAN 2: Kolom Saran Pengembangan baru dan wajib dengan panduan ---
-                            dev_suggestion = st.text_area("Saran Pengembangan", height=150)
-                            st.caption("""
-                            Silakan masukan saran pengembangan untuk karyawan ini, dapat berupa arahan teknis atau jenis pelatihan yang perlu untuk diikuti oleh karyawan ini.
+                            elif employee_type == 'operator':
+                                # --- Tambahan instruksi khusus Operator ---
+                                st.info("Teman-teman diharapkan dapat menilai dengan menjawab pertanyaan dengan se-objektif mungkin dan sesuai dengan keadaan sebenar-benarnya.")
+                                st.markdown(f"**Bagian I: Penilaian Kuantitatif**")
+                                responses = {}
+                                selections = {}
+                                for i, q in enumerate(questions):
+                                    parts = q.split(';')
+                                    if len(parts) >= 4:
+                                        question_text = parts[0].strip()
+                                        options = [p.strip() for p in parts[1:4]]
+                                        st.markdown(f"**{question_text}**")
+                                        # Simpan pilihan radio ke variabel terpisah
+                                        selections[q] = st.radio(f"radio_{i}", options, index=None, key=f"q_{i}", label_visibility="collapsed")
+                                        st.divider()
                             
-                            *Contoh: Karyawan ini akan baik jika mengikuti training Scrum dan Design Thinking.*
-                            """)
+                            # Bagian Kualitatif - sama untuk semua tipe
+                            st.markdown(f"**Bagian II: Penilaian Kualitatif (Wajib Diisi)**")
+                            comment = st.text_area("Comment (Komentar)", height=150, help="Contoh: Karyawan ini sangat positif...")
+                            dev_suggestion = st.text_area("Saran Pengembangan", height=150, help="Contoh: Karyawan ini akan baik jika mengikuti training Scrum...")
 
                             if st.form_submit_button("Kirim Review"):
-                                # --- PERUBAHAN 3: Validasi input wajib ---
-                                if comment and dev_suggestion:
+                                all_quantitative_answered = True
+                                # Proses jawaban berdasarkan tipe karyawan
+                                if employee_type == 'operator':
+                                    for q, selection in selections.items():
+                                        if selection is None:
+                                            all_quantitative_answered = False
+                                            break
+                                        # Konversi pilihan teks ke skor 1, 2, atau 3
+                                        options_list = [p.strip() for p in q.split(';')[1:4]]
+                                        responses[q] = options_list.index(selection) + 1
+                                
+                                if not all_quantitative_answered:
+                                    st.error("Mohon jawab semua pertanyaan penilaian kuantitatif.")
+                                elif not (comment and dev_suggestion):
+                                    st.error("Mohon isi bagian 'Comment (Komentar)' dan 'Saran Pengembangan'.")
+                                else:
                                     responses['Komentar'] = comment
                                     responses['Saran Pengembangan'] = dev_suggestion
                                     if submit_review(reviewer_uid, selected_reviewee_uid, responses):
                                         st.toast("Review berhasil dikirim! ✅")
-                                        time.sleep(1) # Jeda singkat agar toast terlihat
+                                        time.sleep(1)
                                         st.rerun()
-                                else:
-                                    st.error("Mohon isi bagian 'Comment (Komentar)' dan 'Saran Pengembangan'. Keduanya wajib diisi.")
     
     elif app_mode == "📊 Lihat Hasil Saya":
         st.title("📊 Hasil Performance Review Anda")
-        
         my_reviews = get_my_reviews(user_info['uid'])
-        
         if not my_reviews:
             st.info("Belum ada hasil review yang tersedia untuk Anda.")
         else:
             st.markdown(f"Anda telah menerima **{len(my_reviews)}** penilaian. Berikut adalah rinciannya:")
-            
-            question_scores = {}
-            total_scores_list = []
-            
-            my_reviews.sort(key=lambda r: r['timestamp'], reverse=True)
-            
+            user_details = get_user_details(user_info['uid'])
+            employee_type = user_details.get('tipe_karyawan') if user_details else None
+
             for i, review in enumerate(my_reviews):
-                review_date = review['timestamp'].strftime('%d %B %Y, %H:%M')
-                
-                with st.expander(f"**Penilaian ke-{i + 1}** (Diterima pada: `{review_date}`)", expanded=(i==0)):
+                with st.expander(f"**Penilaian ke-{i + 1}**", expanded=(i==0)):
                     scores = {k: v for k, v in review['responses'].items() if isinstance(v, (int, float))}
                     comments = {k: v for k, v in review['responses'].items() if isinstance(v, str)}
                     
                     if scores:
                         st.subheader("Penilaian Kuantitatif")
-                        
-                        user_details = get_user_details(user_info['uid'])
-                        max_value = 10 
-                        if user_details and user_details.get('tipe_karyawan') == 'office':
-                            max_value = 5
-                        elif user_details and user_details.get('tipe_karyawan') == 'operator':
-                            max_value = 3
-                            
                         for question, score in scores.items():
-                            if question not in question_scores:
-                                question_scores[question] = []
-                            question_scores[question].append(score)
-                            total_scores_list.append(score)
+                            # --- PERUBAHAN 2: Tampilan hasil untuk Operator ---
+                            if employee_type == 'operator' and ';' in question:
+                                parts = question.split(';')
+                                question_text = parts[0].strip()
+                                answer_text = parts[score].strip() # Ambil deskripsi sesuai skor (1, 2, atau 3)
+                                st.markdown(f"**{question_text}**")
+                                st.info(f"Jawaban: {answer_text}")
                             
-                            question_display = question
-                            if '|' in question:
-                                parts = question.split('|')
-                                question_display = f"**{parts[0].strip()}**<br><small>{parts[1].strip()}</small>"
-                            
-                            st.markdown(question_display, unsafe_allow_html=True)
-                            st.progress(score / max_value)
-                            st.caption(f"Skor: {score}/{max_value}")
-                            st.markdown("---") 
+                            # Tampilan hasil untuk Office (dan fallback)
+                            else:
+                                question_display = question.split('|')[0].strip() if '|' in question else question
+                                max_value = 5 # Asumsi Office
+                                st.markdown(f"**{question_display}**")
+                                st.progress(score / max_value)
+                                st.caption(f"Skor: {score}/{max_value}")
+                            st.markdown("---")
 
                     # --- PERUBAHAN 4: Tampilan hasil kualitatif yang lebih terstruktur ---
                     if comments:
@@ -587,11 +589,17 @@ else:
             q_type = st.selectbox("Pilih tipe karyawan untuk dikelola:", ("office", "operator"), key="q_type")
             
             st.warning("""
-            **Tips untuk pertanyaan bilingual (Inggris & Indonesia):**
-            Untuk menampilkan pertanyaan dalam dua bahasa, gunakan pemisah `|` (garis vertikal).
-            **Format:** `Pertanyaan Bahasa Inggris | Pertanyaan Bahasa Indonesia`
-            **Contoh:** `Teamwork & Collaboration | Kerjasama & Kolaborasi dalam Tim`
-            Jika tidak menggunakan pemisah `|`, pertanyaan akan ditampilkan dalam satu baris seperti biasa.
+            **Penting: Aturan Format Pertanyaan**
+
+            **Untuk Tipe Office (Bilingual):**
+            - Gunakan pemisah `|` (garis vertikal).
+            - Format: `Pertanyaan Bahasa Inggris | Pertanyaan Bahasa Indonesia`
+            - Contoh: `Teamwork & Collaboration | Kerjasama & Kolaborasi dalam Tim`
+
+            **Untuk Tipe Operator (Pilihan Ganda Deskriptif):**
+            - Gunakan pemisah `;` (titik koma).
+            - Format: `Pertanyaan;Pilihan untuk skor 1;Pilihan untuk skor 2;Pilihan untuk skor 3`
+            - Contoh: `Efektivitas Waktu;Selalu terlambat;Kadang terlambat;Selalu tepat waktu`
             """)
 
             current_questions = get_review_questions(q_type)
