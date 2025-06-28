@@ -192,7 +192,6 @@ if st.session_state.user_info is None:
     login_tab, register_tab = st.tabs(["🔐 Login", "✍️ Registrasi Karyawan Baru"])
 
     with login_tab:
-        # --- PERUBAHAN 1: Menambahkan teks informasi di halaman login ---
         st.markdown("""
         Berikut adalah Performance Review untuk periode **1 Januari 2025 - 30 Juni 2025** dan pelaksanaan penilaian akan dilakukan pada tanggal **1 - 10 Juli 2025**.
 
@@ -230,14 +229,7 @@ if st.session_state.user_info is None:
                                 st.error("Username tidak ditemukan.")
                             else:
                                 user_data = user_docs[0].to_dict()
-                                # Logika verifikasi password terjadi di sisi client via Firebase Auth SDK, 
-                                # di backend kita asumsikan jika email ditemukan maka coba login
                                 user = auth.get_user_by_email(user_data.get('email'))
-                                # Jika baris di atas berhasil, kita tidak bisa memverifikasi password secara langsung di backend
-                                # Jadi, kita lanjutkan dengan asumsi login berhasil (ini adalah batasan dari pendekatan ini)
-                                # Verifikasi password sesungguhnya terjadi secara implisit di aplikasi yang menggunakan SDK client.
-                                # Dalam kasus streamlit, kita perlu pendekatan berbeda seperti menggunakan `identity platform` atau API custom
-                                # Untuk sekarang, kita asumsikan jika username ada, login berhasil.
                                 st.session_state.user_info = { "uid": user.uid, "email": user.email, "username": user_data.get('username'), "nama": user_data.get('nama', user.email) }
                                 st.rerun()
                     except Exception as e: st.error(f"Login Gagal: Password salah atau terjadi kesalahan sistem.")
@@ -287,7 +279,6 @@ else:
     if app_mode == "📝 Beri Review":
         st.title("📝 Dashboard Performance Review")
         
-        # --- PERUBAHAN 2: Menambahkan teks informasi di halaman pemilihan karyawan ---
         st.info(
             """
             Nama-nama karyawan di dropdown adalah rekan kerja yang perlu teman-teman beri penilaian. 
@@ -312,7 +303,30 @@ else:
                     if questions:
                         with st.form("review_form", clear_on_submit=True):
                             
-                            # --- PERUBAHAN 3: Menyesuaikan skala penilaian ---
+                            # --- PERUBAHAN 1: Menambahkan panduan penilaian ---
+                            if employee_type == 'office':
+                                st.info(
+                                    """
+                                    *Before you fill the performance scoring session, please keep in mind that this is a scale-based score. The scale interpretation as mentioned below:*
+                                    
+                                    *Sebelum mengisi sesi penilaian performa, mohon diingat bahwa ini merupakan penilaian berbasis skala. Skala yang digunakan memiliki interpretasi sebagai berikut:*
+                                    
+                                    ---
+                                    
+                                    - **1 = high-improvement needed** (*perlu banyak pengembangan*)
+                                    - **2 = small-improvement needed** (*masih perlu pengembangan*)
+                                    - **3 = target achieved** (*memenuhi target*)
+                                    - **4 = more than achieved** (*memenuhi diatas target*)
+                                    - **5 = excellently achieved** (*sangat melebihi target*)
+                                    
+                                    ---
+                                    
+                                    Guidelines lebih lengkap mengenai skala penilaian dapat dicek di [bit.ly/RN_PRGuidelines](https://bit.ly/RN_PRGuidelines)
+                                    
+                                    Teman-teman diharapkan dapat menilai dengan menjawab pertanyaan dengan se-objektif mungkin dan sesuai dengan keadaan sebenar-benarnya. Informasi mengenai hal ini bersifat *confidential* akan di-keep oleh tim PnC dan dijamin kerahasiaannya.
+                                    """
+                                )
+                            
                             max_rating = 10
                             default_rating = 5
                             if employee_type == 'office':
@@ -322,9 +336,35 @@ else:
                                 max_rating = 3
                                 default_rating = 2
                             
-                            st.markdown(f"**Petunjuk:** Berikan penilaian dengan skala **1** (Perlu Peningkatan) sampai **{max_rating}** (Sangat Baik).")
+                            st.markdown(f"**Petunjuk Penilaian:**")
                             
-                            responses = {q: st.slider(label=q, min_value=1, max_value=max_rating, value=default_rating, key=f"q_{i}") for i, q in enumerate(questions)}
+                            # --- PERUBAHAN 2: Mengubah cara menampilkan pertanyaan dan slider ---
+                            responses = {}
+                            for i, q in enumerate(questions):
+                                question_label = q
+                                # Cek jika ada pemisah '|' untuk format bilingual
+                                if '|' in q:
+                                    parts = q.split('|')
+                                    english_q = parts[0].strip()
+                                    indonesian_q = parts[1].strip()
+                                    # Format dengan Markdown: Inggris (bold) dan Indonesia (kecil)
+                                    question_label = f"**{english_q}**<br><small>{indonesian_q}</small>"
+                                
+                                # Tampilkan label pertanyaan menggunakan markdown
+                                st.markdown(question_label, unsafe_allow_html=True)
+                                
+                                # Tampilkan slider dengan label tersembunyi
+                                score = st.slider(
+                                    label=f"slider_for_{i}", # Label unik untuk internal Streamlit
+                                    min_value=1, 
+                                    max_value=max_rating, 
+                                    value=default_rating, 
+                                    key=f"q_{i}",
+                                    label_visibility="collapsed" # Sembunyikan label slider
+                                )
+                                responses[q] = score
+                                st.divider() # Tambahkan pemisah antar pertanyaan
+                            
                             general_comments = st.text_area("Komentar Umum (Opsional):", height=150)
                             if st.form_submit_button("Kirim Review"):
                                 if general_comments: responses['Komentar Umum'] = general_comments
@@ -355,9 +395,8 @@ else:
                     if scores:
                         st.subheader("Penilaian Kuantitatif")
                         
-                        # --- PENYESUAIAN 3.1: Menyesuaikan progress bar di halaman hasil ---
                         user_details = get_user_details(user_info['uid'])
-                        max_value = 10 # Default
+                        max_value = 10 
                         if user_details and user_details.get('tipe_karyawan') == 'office':
                             max_value = 5
                         elif user_details and user_details.get('tipe_karyawan') == 'operator':
@@ -369,7 +408,13 @@ else:
                             question_scores[question].append(score)
                             total_scores_list.append(score)
                             
-                            st.markdown(f"<small style='line-height: 1.2;'>{question}</small>", unsafe_allow_html=True)
+                            # Logika tampilan bilingual juga di halaman hasil
+                            question_display = question
+                            if '|' in question:
+                                parts = question.split('|')
+                                question_display = f"**{parts[0].strip()}**<br><small>{parts[1].strip()}</small>"
+                            
+                            st.markdown(question_display, unsafe_allow_html=True)
                             st.progress(score / max_value)
                             st.caption(f"Skor: {score}/{max_value}")
                             st.markdown("---") 
@@ -385,7 +430,7 @@ else:
 
             if total_scores_list:
                 user_details = get_user_details(user_info['uid'])
-                max_value = 10 # Default
+                max_value = 10
                 if user_details and user_details.get('tipe_karyawan') == 'office':
                     max_value = 5
                 elif user_details and user_details.get('tipe_karyawan') == 'operator':
@@ -399,14 +444,18 @@ else:
                 st.subheader("Rincian Rata-Rata per Item Pertanyaan")
                 for question, scores_list in question_scores.items():
                     avg_score = sum(scores_list) / len(scores_list)
-                    st.markdown(f"<small>{question}</small>", unsafe_allow_html=True)
+                    
+                    question_display = question
+                    if '|' in question:
+                        parts = question.split('|')
+                        question_display = f"**{parts[0].strip()}**<br><small>{parts[1].strip()}</small>"
+                    
+                    st.markdown(question_display, unsafe_allow_html=True)
                     st.text(f"Rata-rata Skor: {avg_score:.2f}")
                     st.divider()
             else:
                 st.info("Tidak ada data penilaian kuantitatif untuk dihitung rata-ratanya.")
 
-
-    # --- KONTEN PANEL ADMIN DILINDUNGI ---
     elif app_mode == "⚙️ Panel Admin" and is_admin:
         st.title("⚙️ Panel Admin")
         
@@ -416,6 +465,18 @@ else:
             st.header("Kelola Pertanyaan Performance Review")
             q_type = st.selectbox("Pilih tipe karyawan untuk dikelola:", ("office", "operator"), key="q_type")
             
+            # --- Penjelasan format bilingual di panel admin ---
+            st.warning("""
+            **Tips untuk pertanyaan bilingual (Inggris & Indonesia):**
+            Untuk menampilkan pertanyaan dalam dua bahasa, gunakan pemisah `|` (garis vertikal).
+            
+            **Format:** `Pertanyaan Bahasa Inggris | Pertanyaan Bahasa Indonesia`
+            
+            **Contoh:** `Teamwork & Collaboration | Kerjasama & Kolaborasi dalam Tim`
+            
+            Jika tidak menggunakan pemisah `|`, pertanyaan akan ditampilkan dalam satu baris seperti biasa.
+            """)
+
             current_questions = get_review_questions(q_type)
             questions_text = "\n".join(current_questions)
             
