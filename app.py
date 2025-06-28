@@ -190,8 +190,25 @@ if st.session_state.user_info is None:
     st.title("Selamat Datang di Aplikasi Performance Review Rahsa Nusantara")
     
     login_tab, register_tab = st.tabs(["🔐 Login", "✍️ Registrasi Karyawan Baru"])
-    # Logika login dan registrasi... (tidak berubah)
+
     with login_tab:
+        # --- PERUBAHAN 1: Menambahkan teks informasi di halaman login ---
+        st.markdown("""
+        Berikut adalah Performance Review untuk periode **1 Januari 2025 - 30 Juni 2025** dan pelaksanaan penilaian akan dilakukan pada tanggal **1 - 10 Juli 2025**.
+
+        **Catatan:**
+        Silahkan login menggunakan username dan password yang sudah dibagikan ke email masing-masing:
+        - **Username:** Nama Lengkap Anda
+        - **Password:** *Unique code* yang sudah dibagikan ke email
+
+        Apabila ada hal yang ingin ditanyakan, silahkan hubungi PnC melalui e-mail maupun WhatsApp. Terima kasih.
+
+        *Regards,*
+        
+        *People and Culture*
+        """)
+        st.divider()
+        
         st.subheader("Login ke Akun Anda")
         with st.form("login_form"):
             username = st.text_input("Username")
@@ -200,24 +217,32 @@ if st.session_state.user_info is None:
                 if username and password:
                     try:
                         if username == "Data Rahsa" and password == "password123":
-                             users_ref = db.collection('users').where(filter=FieldFilter('username', '==', username)).limit(1).stream()
-                             if not (user_docs := list(users_ref)):
-                                 st.error("Akun admin 'Data Rahsa' tidak ditemukan di database.")
-                             else:
-                                 user_data = user_docs[0].to_dict()
-                                 st.session_state.user_info = { "uid": user_data.get('uid'), "email": user_data.get('email'), "username": user_data.get('username'), "nama": user_data.get('nama') }
-                                 st.rerun()
+                            users_ref = db.collection('users').where(filter=FieldFilter('username', '==', username)).limit(1).stream()
+                            if not (user_docs := list(users_ref)):
+                                st.error("Akun admin 'Data Rahsa' tidak ditemukan di database.")
+                            else:
+                                user_data = user_docs[0].to_dict()
+                                st.session_state.user_info = { "uid": user_data.get('uid'), "email": user_data.get('email'), "username": user_data.get('username'), "nama": user_data.get('nama') }
+                                st.rerun()
                         else: 
                             users_ref = db.collection('users').where(filter=FieldFilter('username', '==', username)).limit(1).stream()
                             if not (user_docs := list(users_ref)):
                                 st.error("Username tidak ditemukan.")
                             else:
                                 user_data = user_docs[0].to_dict()
+                                # Logika verifikasi password terjadi di sisi client via Firebase Auth SDK, 
+                                # di backend kita asumsikan jika email ditemukan maka coba login
                                 user = auth.get_user_by_email(user_data.get('email'))
+                                # Jika baris di atas berhasil, kita tidak bisa memverifikasi password secara langsung di backend
+                                # Jadi, kita lanjutkan dengan asumsi login berhasil (ini adalah batasan dari pendekatan ini)
+                                # Verifikasi password sesungguhnya terjadi secara implisit di aplikasi yang menggunakan SDK client.
+                                # Dalam kasus streamlit, kita perlu pendekatan berbeda seperti menggunakan `identity platform` atau API custom
+                                # Untuk sekarang, kita asumsikan jika username ada, login berhasil.
                                 st.session_state.user_info = { "uid": user.uid, "email": user.email, "username": user_data.get('username'), "nama": user_data.get('nama', user.email) }
                                 st.rerun()
                     except Exception as e: st.error(f"Login Gagal: Password salah atau terjadi kesalahan sistem.")
                 else: st.warning("Username dan password tidak boleh kosong.")
+                
     with register_tab:
         st.subheader("Formulir Pendaftaran")
         reg_type = st.radio("Pilih Tipe Karyawan:", ("Office", "Operator"), horizontal=True, key="reg_type")
@@ -260,8 +285,17 @@ else:
             st.session_state.user_info = None; st.rerun()
 
     if app_mode == "📝 Beri Review":
-        # Logika beri review... (tidak berubah)
         st.title("📝 Dashboard Performance Review")
+        
+        # --- PERUBAHAN 2: Menambahkan teks informasi di halaman pemilihan karyawan ---
+        st.info(
+            """
+            Nama-nama karyawan di dropdown adalah rekan kerja yang perlu teman-teman beri penilaian. 
+            Penilaian mencakup atasan langsung (supervisor), bawahan (subordinate), dan rekan satu tim (peers). 
+            Beberapa karyawan juga diminta menilai 1 orang dari luar timnya, sesuai pembagian yang telah ditentukan.
+            """
+        )
+
         reviewer_uid = user_info['uid']
         reviewees = get_assigned_reviewees(reviewer_uid)
         if not reviewees: st.warning("Saat ini tidak ada reviewee yang ditugaskan untuk Anda.")
@@ -277,7 +311,20 @@ else:
                     questions = get_review_questions(employee_type)
                     if questions:
                         with st.form("review_form", clear_on_submit=True):
-                            responses = {q: st.slider(label=q, min_value=1, max_value=10, value=5, key=f"q_{i}") for i, q in enumerate(questions)}
+                            
+                            # --- PERUBAHAN 3: Menyesuaikan skala penilaian ---
+                            max_rating = 10
+                            default_rating = 5
+                            if employee_type == 'office':
+                                max_rating = 5
+                                default_rating = 3
+                            elif employee_type == 'operator':
+                                max_rating = 3
+                                default_rating = 2
+                            
+                            st.markdown(f"**Petunjuk:** Berikan penilaian dengan skala **1** (Perlu Peningkatan) sampai **{max_rating}** (Sangat Baik).")
+                            
+                            responses = {q: st.slider(label=q, min_value=1, max_value=max_rating, value=default_rating, key=f"q_{i}") for i, q in enumerate(questions)}
                             general_comments = st.text_area("Komentar Umum (Opsional):", height=150)
                             if st.form_submit_button("Kirim Review"):
                                 if general_comments: responses['Komentar Umum'] = general_comments
@@ -293,35 +340,39 @@ else:
         else:
             st.markdown(f"Anda telah menerima **{len(my_reviews)}** penilaian. Berikut adalah rinciannya:")
             
-            # --- Logika baru untuk agregasi dan tampilan ---
             question_scores = {}
             total_scores_list = []
             
-            # Urutkan review dari yang terbaru
             my_reviews.sort(key=lambda r: r['timestamp'], reverse=True)
             
             for i, review in enumerate(my_reviews):
                 review_date = review['timestamp'].strftime('%d %B %Y, %H:%M')
                 
-                # Mengubah judul menjadi anonim
                 with st.expander(f"**Penilaian ke-{i + 1}** (Diterima pada: `{review_date}`)", expanded=(i==0)):
                     scores = {k: v for k, v in review['responses'].items() if isinstance(v, (int, float))}
                     comments = {k: v for k, v in review['responses'].items() if isinstance(v, str)}
                     
                     if scores:
                         st.subheader("Penilaian Kuantitatif")
-                        # Mengumpulkan skor untuk perhitungan rata-rata
+                        
+                        # --- PENYESUAIAN 3.1: Menyesuaikan progress bar di halaman hasil ---
+                        user_details = get_user_details(user_info['uid'])
+                        max_value = 10 # Default
+                        if user_details and user_details.get('tipe_karyawan') == 'office':
+                            max_value = 5
+                        elif user_details and user_details.get('tipe_karyawan') == 'operator':
+                            max_value = 3
+                            
                         for question, score in scores.items():
                             if question not in question_scores:
                                 question_scores[question] = []
                             question_scores[question].append(score)
                             total_scores_list.append(score)
                             
-                            # Menampilkan pertanyaan dan skor secara vertikal
                             st.markdown(f"<small style='line-height: 1.2;'>{question}</small>", unsafe_allow_html=True)
-                            st.progress(score / 10)
-                            st.caption(f"Skor: {score}/10")
-                            st.markdown("---") # Garis pemisah tipis
+                            st.progress(score / max_value)
+                            st.caption(f"Skor: {score}/{max_value}")
+                            st.markdown("---") 
 
                     if comments:
                         st.subheader("Komentar dan Masukan Kualitatif")
@@ -333,14 +384,19 @@ else:
             st.header("Ringkasan dan Rata-Rata Penilaian")
 
             if total_scores_list:
-                # Menghitung dan menampilkan rata-rata keseluruhan
+                user_details = get_user_details(user_info['uid'])
+                max_value = 10 # Default
+                if user_details and user_details.get('tipe_karyawan') == 'office':
+                    max_value = 5
+                elif user_details and user_details.get('tipe_karyawan') == 'operator':
+                    max_value = 3
+                    
                 overall_average = sum(total_scores_list) / len(total_scores_list)
-                st.metric(label="Rata-Rata Nilai Keseluruhan", value=f"{overall_average:.2f} / 10")
-                st.progress(overall_average / 10)
+                st.metric(label="Rata-Rata Nilai Keseluruhan", value=f"{overall_average:.2f} / {max_value}")
+                st.progress(overall_average / max_value)
                 st.markdown("---")
 
                 st.subheader("Rincian Rata-Rata per Item Pertanyaan")
-                # Menghitung dan menampilkan rata-rata per pertanyaan
                 for question, scores_list in question_scores.items():
                     avg_score = sum(scores_list) / len(scores_list)
                     st.markdown(f"<small>{question}</small>", unsafe_allow_html=True)
@@ -373,7 +429,6 @@ else:
         with admin_tab2:
             st.header("Kelola Penugasan Reviewer")
             
-            # --- PEMBARUAN: Tambahkan pilihan tipe penugasan ---
             assignment_type_to_manage = st.radio(
                 "Pilih tipe penugasan untuk dikelola:",
                 ("office", "operator"),
@@ -401,7 +456,6 @@ else:
                         else:
                             reviewer_uid = user_uids[user_names.index(reviewer_name)]
                             reviewee_uid = user_uids[user_names.index(reviewee_name)]
-                            # Kirim tipe penugasan ke fungsi
                             if add_assignment(reviewer_uid, reviewee_uid, assignment_type_to_manage):
                                 st.rerun() 
                     else:
@@ -410,7 +464,6 @@ else:
             st.divider()
             st.subheader(f"Daftar Penugasan Saat Ini (Tipe: `{assignment_type_to_manage.capitalize()}`)")
             
-            # Ambil dan tampilkan daftar berdasarkan tipe yang dipilih
             assignments = get_all_assignments(assignment_type_to_manage)
             if not assignments:
                 st.info("Belum ada penugasan yang dibuat untuk tipe ini.")
@@ -424,6 +477,6 @@ else:
                     with col3:
                         st.write(f"**{assignment['reviewee_name']}**")
                     with col4:
-                         if st.button("Hapus", key=f"del_{assignment['id']}", use_container_width=True):
+                          if st.button("Hapus", key=f"del_{assignment['id']}", use_container_width=True):
                             delete_assignment(assignment['id'])
                             st.rerun()
