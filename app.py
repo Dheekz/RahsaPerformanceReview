@@ -7,6 +7,8 @@ from firebase_admin import credentials, firestore, auth
 from google.cloud.firestore_v1.base_query import FieldFilter
 import pandas as pd
 import time
+import google.generativeai as genai
+from config import API_KEY
 
 # --- KONFIGURASI DAN INISIALISASI ---
 
