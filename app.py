@@ -39,10 +39,27 @@ except ValueError:
         st.stop()
 
 
+# --- PERUBAHAN: Konfigurasi Gemini API dari config.py ---
+generation_model = None
+embedding_model = None # Disiapkan sesuai permintaan
+
+if not API_KEY or API_KEY == "MASUKKAN_API_KEY_ANDA_DI_SINI":
+    st.warning("API Key Gemini belum diatur di config.py. Fitur rangkuman AI tidak akan tersedia.", icon="⚠️")
+else:
+    try:
+        genai.configure(api_key=API_KEY)
+        generation_model = genai.GenerativeModel('gemini-1.5-flash')
+        embedding_model = genai.GenerativeModel('models/embedding-001') # Tidak digunakan, tapi didefinisikan
+    except Exception as e:
+        st.error(f"Gagal mengkonfigurasi Gemini API: {e}")
+        st.stop()
+
 db = firestore.client()
 
 if 'user_info' not in st.session_state:
     st.session_state.user_info = None
+if 'gemini_summary' not in st.session_state:
+    st.session_state.gemini_summary = None
 
 # --- FUNGSI-FUNGSI BANTUAN ---
 
@@ -163,6 +180,46 @@ def process_app_feedback_submission(uid, user_nama, rating, suggestion):
     except Exception as e:
         st.error(f"Terjadi kesalahan saat mengirim ulasan: {e}")
         return False
+
+def generate_summary_with_gemini(all_comments):
+    """Fungsi untuk memanggil Gemini AI dan membuat rangkuman."""
+    # PERUBAHAN: Memastikan model sudah dikonfigurasi sebelum digunakan
+    if not generation_model:
+        st.error("Model AI tidak berhasil dikonfigurasi. Tidak dapat membuat rangkuman.")
+        return None
+    
+    prompt = f"""
+    Anda adalah seorang asisten HR yang profesional dan suportif. Tugas Anda adalah menganalisis data performance review seorang karyawan dan membuat rangkuman yang konstruktif dalam Bahasa Indonesia.
+
+    Berikut adalah kumpulan masukan kualitatif (komentar dan saran) dari beberapa penilai:
+    ---
+    {all_comments}
+    ---
+
+    Berdasarkan data di atas, buatlah sebuah rangkuman dalam format berikut:
+
+    ### Ringkasan Umum
+    Satu paragraf singkat yang merangkum keseluruhan feedback secara netral dan seimbang.
+
+    ### Kekuatan Utama (Strengths)
+    Buat dalam bentuk poin-poin (bullet points), identifikasi 2-3 kekuatan utama yang paling sering disebut atau paling menonjol dari semua komentar.
+
+    ### Area untuk Pengembangan (Areas for Improvement)
+    Buat dalam bentuk poin-poin (bullet points), identifikasi 2-3 area pengembangan yang paling sering disebut dari komentar dan saran.
+
+    ### Saran Langkah Berikutnya
+    Berikan satu paragraf saran umum yang positif dan memotivasi untuk pengembangan karyawan ke depannya.
+
+    Gunakan bahasa yang positif, profesional, dan membangun. Fokus pada pertumbuhan dan pengembangan, bukan pada kelemahan.
+    """
+    
+    try:
+        # PERUBAHAN: Menggunakan model yang sudah dikonfigurasi secara global
+        response = generation_model.generate_content(prompt)
+        return response.text
+    except Exception as e:
+        st.error(f"Gagal menghasilkan rangkuman dari AI: {e}")
+        return None
 
 def get_all_users():
     """Mengambil semua pengguna dari koleksi 'users'."""
@@ -535,6 +592,19 @@ else:
             else:
                 st.info("Tidak ada data penilaian kuantitatif untuk dihitung rata-ratanya.")
 
+            # --- BAGIAN BARU: Tombol Generate Rangkuman AI ---
+            st.header("Analisis Rangkuman dengan AI")
+            
+            # PERUBAHAN: Cek apakah model AI sudah siap digunakan
+            if not generation_model:
+                st.warning("Fitur rangkuman AI tidak tersedia. Mohon atur API Key Anda di file `config.py`.", icon="🔒")
+            elif st.button("✨ Buat Rangkuman dengan AI"):
+                with st.spinner("AI sedang menganalisis dan membuat rangkuman... Ini mungkin memerlukan beberapa saat."):
+                    summary = generate_summary_with_gemini(all_comments_text)
+                    st.session_state.gemini_summary = summary
+            
+            if st.session_state.gemini_summary:
+                st.markdown(st.session_state.gemini_summary)
 
     elif app_mode == "⭐ Beri Ulasan Aplikasi":
         st.title("⭐ Ulasan Penggunaan Aplikasi")
