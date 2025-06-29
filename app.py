@@ -516,6 +516,7 @@ else:
             # --- PERBAIKAN: Inisialisasi di luar loop ---
             question_scores = {}
             total_scores_list = []
+            all_comments_text = ""
 
             for i, review in enumerate(my_reviews):
                 review_date = review.get('timestamp', 'N/A')
@@ -529,7 +530,6 @@ else:
                     if scores:
                         st.subheader("Penilaian Kuantitatif")
                         for question, score in scores.items():
-                            # Agregasi skor untuk perhitungan rata-rata
                             if question not in question_scores:
                                 question_scores[question] = []
                             question_scores[question].append(score)
@@ -559,18 +559,18 @@ else:
                         if comment_text:
                             st.markdown("**Comment (Komentar)**")
                             st.info(comment_text)
+                            all_comments_text += f"- Komentar: {comment_text}\n"
                         if 'Saran Pengembangan' in comments:
                             st.markdown("**Saran Pengembangan**")
                             st.info(comments['Saran Pengembangan'])
+                            all_comments_text += f"- Saran Pengembangan: {comments['Saran Pengembangan']}\n"
+                        all_comments_text += "---\n"
 
-            # --- PERBAIKAN: Menambahkan kembali bagian Ringkasan dan Rata-rata ---
             st.divider()
             st.header("Ringkasan dan Rata-Rata Penilaian")
 
             if total_scores_list:
-                # Tentukan skala maksimum berdasarkan tipe karyawan
                 max_value = 5 if employee_type == 'office' else 3
-                
                 overall_average = sum(total_scores_list) / len(total_scores_list)
                 st.metric(label="Rata-Rata Nilai Keseluruhan", value=f"{overall_average:.2f} / {max_value}")
                 st.progress(overall_average / max_value)
@@ -580,7 +580,6 @@ else:
                 for question, scores_list in question_scores.items():
                     avg_score = sum(scores_list) / len(scores_list)
                     
-                    # Tampilkan pertanyaan dengan format yang benar
                     if employee_type == 'operator' and ';' in question:
                         question_display = question.split(';')[0].strip()
                     elif '|' in question:
@@ -593,11 +592,10 @@ else:
                     st.divider()
             else:
                 st.info("Tidak ada data penilaian kuantitatif untuk dihitung rata-ratanya.")
-
+            
             # --- BAGIAN BARU: Tombol Generate Rangkuman AI ---
             st.header("Analisis Rangkuman dengan AI")
             
-            # PERUBAHAN: Cek apakah model AI sudah siap digunakan
             if not generation_model:
                 st.warning("Fitur rangkuman AI tidak tersedia. Mohon atur API Key Anda di file `config.py`.", icon="🔒")
             elif st.button("✨ Buat Rangkuman dengan AI"):
