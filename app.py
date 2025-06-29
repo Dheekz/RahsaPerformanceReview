@@ -453,6 +453,10 @@ else:
             employee_type = user_details.get('tipe_karyawan') if user_details else None
 
             my_reviews.sort(key=lambda r: r.get('timestamp', pd.Timestamp.min), reverse=True)
+            
+            # --- PERBAIKAN: Inisialisasi di luar loop ---
+            question_scores = {}
+            total_scores_list = []
 
             for i, review in enumerate(my_reviews):
                 review_date = review.get('timestamp', 'N/A')
@@ -466,6 +470,12 @@ else:
                     if scores:
                         st.subheader("Penilaian Kuantitatif")
                         for question, score in scores.items():
+                            # Agregasi skor untuk perhitungan rata-rata
+                            if question not in question_scores:
+                                question_scores[question] = []
+                            question_scores[question].append(score)
+                            total_scores_list.append(score)
+
                             if employee_type == 'operator' and ';' in question:
                                 parts = question.split(';')
                                 if len(parts) > int(score):
@@ -476,7 +486,7 @@ else:
                                 else:
                                     st.markdown(f"**{question}** (Data tidak lengkap)")
                             
-                            else:
+                            else: # Untuk tipe Office
                                 question_display = question.split('|')[0].strip() if '|' in question else question
                                 max_value = 5
                                 st.markdown(f"**{question_display}**")
@@ -490,10 +500,40 @@ else:
                         if comment_text:
                             st.markdown("**Comment (Komentar)**")
                             st.info(comment_text)
-                        # --- PERUBAHAN 3: 'Saran Pengembangan' hanya ditampilkan jika ada ---
                         if 'Saran Pengembangan' in comments:
                             st.markdown("**Saran Pengembangan**")
                             st.info(comments['Saran Pengembangan'])
+
+            # --- PERBAIKAN: Menambahkan kembali bagian Ringkasan dan Rata-rata ---
+            st.divider()
+            st.header("Ringkasan dan Rata-Rata Penilaian")
+
+            if total_scores_list:
+                # Tentukan skala maksimum berdasarkan tipe karyawan
+                max_value = 5 if employee_type == 'office' else 3
+                
+                overall_average = sum(total_scores_list) / len(total_scores_list)
+                st.metric(label="Rata-Rata Nilai Keseluruhan", value=f"{overall_average:.2f} / {max_value}")
+                st.progress(overall_average / max_value)
+                st.markdown("---")
+
+                st.subheader("Rincian Rata-Rata per Item Pertanyaan")
+                for question, scores_list in question_scores.items():
+                    avg_score = sum(scores_list) / len(scores_list)
+                    
+                    # Tampilkan pertanyaan dengan format yang benar
+                    if employee_type == 'operator' and ';' in question:
+                        question_display = question.split(';')[0].strip()
+                    elif '|' in question:
+                        question_display = f"**{question.split('|')[0].strip()}**<br><small>{question.split('|')[1].strip()}</small>"
+                    else:
+                        question_display = question
+                    
+                    st.markdown(question_display, unsafe_allow_html=True)
+                    st.text(f"Rata-rata Skor: {avg_score:.2f}")
+                    st.divider()
+            else:
+                st.info("Tidak ada data penilaian kuantitatif untuk dihitung rata-ratanya.")
 
 
     elif app_mode == "⭐ Beri Ulasan Aplikasi":
