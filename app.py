@@ -340,6 +340,7 @@ else:
                                     **Before you fill the performance scoring session, please keep in mind that this is a scale-based score. The scale interpretation as mentioned below:**
                                     
                                     **Sebelum mengisi sesi penilaian performa, mohon diingat bahwa ini merupakan penilaian berbasis skala. Skala yang digunakan memiliki interpretasi sebagai berikut:**
+                                    
                                     ---
                                     - **1 = high-improvement needed** (*perlu banyak pengembangan*)
                                     - **2 = small-improvement needed** (*masih perlu pengembangan*)
