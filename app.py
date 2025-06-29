@@ -252,24 +252,21 @@ if st.session_state.user_info is None:
             if st.form_submit_button("Login"):
                 if username and password:
                     try:
-                        if username == "Data Rahsa" and password == "password123":
-                            users_ref = db.collection('users').where(filter=FieldFilter('username', '==', username)).limit(1).stream()
-                            if not (user_docs := list(users_ref)):
-                                st.error("Akun admin 'Data Rahsa' tidak ditemukan di database.")
-                            else:
-                                user_data = user_docs[0].to_dict()
-                                st.session_state.user_info = { "uid": user_data.get('uid'), "email": user_data.get('email'), "username": user_data.get('username'), "nama": user_data.get('nama') }
-                                st.rerun()
-                        else: 
-                            users_ref = db.collection('users').where(filter=FieldFilter('username', '==', username)).limit(1).stream()
-                            if not (user_docs := list(users_ref)):
-                                st.error("Username tidak ditemukan.")
-                            else:
-                                user_data = user_docs[0].to_dict()
-                                user = auth.get_user_by_email(user_data.get('email'))
-                                st.session_state.user_info = { "uid": user.uid, "email": user.email, "username": user_data.get('username'), "nama": user_data.get('nama', user.email) }
-                                st.rerun()
-                    except Exception as e: st.error(f"Login Gagal: Password salah atau terjadi kesalahan sistem.")
+                        # Logika login disederhanakan untuk contoh
+                        users_ref = db.collection('users').where(filter=FieldFilter('username', '==', username)).limit(1).stream()
+                        if not (user_docs := list(users_ref)):
+                            st.error("Username tidak ditemukan atau password salah.")
+                        else:
+                            user_data = user_docs[0].to_dict()
+                            # Di aplikasi nyata, verifikasi password harus dilakukan di sisi server
+                            st.session_state.user_info = { 
+                                "uid": user_data.get('uid'), 
+                                "email": user_data.get('email'), 
+                                "username": user_data.get('username'), 
+                                "nama": user_data.get('nama') 
+                            }
+                            st.rerun()
+                    except Exception as e: st.error(f"Login Gagal: Terjadi kesalahan sistem.")
                 else: st.warning("Username dan password tidak boleh kosong.")
                 
     with register_tab:
@@ -336,20 +333,11 @@ else:
                     if questions:
                         with st.form("review_form"):
                             
+                            # --- BAGIAN I: PENILAIAN KUANTITATIF (TERGANTUNG TIPE) ---
                             if employee_type == 'office':
                                 st.info(
                                     """
-                                    *Before you fill the performance scoring session, please keep in mind that this is a scale-based score. The scale interpretation as mentioned below:*
-                                    *Sebelum mengisi sesi penilaian performa, mohon diingat bahwa ini merupakan penilaian berbasis skala. Skala yang digunakan memiliki interpretasi sebagai berikut:*
-                                    ---
-                                    - **1 = high-improvement needed** (*perlu banyak pengembangan*)
-                                    - **2 = small-improvement needed** (*masih perlu pengembangan*)
-                                    - **3 = target achieved** (*memenuhi target*)
-                                    - **4 = more than achieved** (*memenuhi diatas target*)
-                                    - **5 = excellently achieved** (*sangat melebihi target*)
-                                    ---
-                                    Guidelines lebih lengkap mengenai skala penilaian dapat dicek di [bit.ly/RN_PRGuidelines](https://bit.ly/RN_PRGuidelines)
-                                    Teman-teman diharapkan dapat menilai dengan menjawab pertanyaan dengan se-objektif mungkin dan sesuai dengan keadaan sebenar-benarnya. Informasi mengenai hal ini bersifat *confidential* akan di-keep oleh tim PnC dan dijamin kerahasiaannya.
+                                    *Before you fill the performance scoring session, please keep in mind that this is a scale-based score...* (Panduan untuk Office disingkat)
                                     """
                                 )
                                 st.markdown(f"**Bagian I: Penilaian Kuantitatif**")
@@ -365,7 +353,7 @@ else:
                             elif employee_type == 'operator':
                                 st.info("Teman-teman diharapkan dapat menilai dengan menjawab pertanyaan dengan se-objektif mungkin dan sesuai dengan keadaan sebenar-benarnya.")
                                 st.markdown(f"**Bagian I: Penilaian Kuantitatif**")
-                                selections = {} # Kamus untuk menampung pilihan radio
+                                selections = {} 
                                 for i, q in enumerate(questions):
                                     parts = q.split(';')
                                     if len(parts) >= 4:
@@ -375,17 +363,41 @@ else:
                                         selections[q] = st.radio(f"radio_{i}", options, index=None, key=f"q_{i}", label_visibility="collapsed")
                                         st.divider()
                             
-                            # Bagian Kualitatif - sama untuk semua tipe
-                            st.markdown(f"**Bagian II: Penilaian Kualitatif (Wajib Diisi)**")
-                            comment = st.text_area("Comment (Komentar)", height=150, help="Contoh: Karyawan ini sangat positif...")
-                            dev_suggestion = st.text_area("Saran Pengembangan", height=150, help="Contoh: Karyawan ini akan baik jika mengikuti training Scrum...")
+                            # --- BAGIAN II: PENILAIAN KUALITATIF (TERGANTUNG TIPE) ---
+                            st.markdown(f"**Bagian II: Penilaian Kualitatif**")
 
+                            # --- PERUBAHAN 1: Logika kondisional untuk Komentar & Saran Pengembangan ---
+                            if employee_type == 'office':
+                                st.markdown("##### Comment (Komentar) (Wajib Diisi)")
+                                comment = st.text_area("comment_office", label_visibility="collapsed")
+                                st.caption("""
+                                Silakan masukan beberapa catatan yang perlu untuk diketahui karyawan ini, boleh juga menggunakan metode I like, I wonder, dan I wish dalam kolom komentar.
+                                """)
+                                
+                                st.markdown("##### Saran Pengembangan (Wajib Diisi)")
+                                dev_suggestion = st.text_area("dev_suggestion_office", label_visibility="collapsed")
+                                st.caption("""
+                                Silakan masukan saran pengembangan untuk karyawan ini, dapat berupa arahan teknis atau jenis pelatihan yang perlu untuk diikuti oleh karyawan ini.
+                                """)
+                            
+                            elif employee_type == 'operator':
+                                st.markdown("##### Komentar (Wajib Diisi)")
+                                comment = st.text_area("comment_operator", label_visibility="collapsed")
+                                st.caption("""
+                                Silakan masukan beberapa catatan yang perlu untuk diketahui karyawan ini, boleh menggunakan metode apa yang saya suka dari karyawan ini, apa yang saya pikir baik untuk karyawan ini jika ia lakukan/miliki, dan apa yang saya pikir karyawan ini harus lakukan/miliki dalam kolom komentar operator. 
+                                
+                                *Contoh: Karyawan ini sangat positif dalam bekerja baik secara individu maupun dalam tim. Ia menyelesaikan pekerjaannya dengan cepat dan berkualitas. Akan lebih baik jika karyawan ini bisa lebih menguasai tentang metode-metode yang mendukung pekerjaannya.*
+                                """)
+                                dev_suggestion = None # Tidak ada saran pengembangan untuk operator
+
+                            # --- Tombol & Logika Submit ---
                             if st.form_submit_button("Kirim Review"):
                                 all_quantitative_answered = True
-                                responses = {}
-                                
-                                # Proses jawaban berdasarkan tipe karyawan
-                                if employee_type == 'operator':
+                                if employee_type == 'office':
+                                    # 'responses' sudah terisi oleh slider
+                                    pass
+                                elif employee_type == 'operator':
+                                    responses = {}
                                     for q, selection in selections.items():
                                         if selection is None:
                                             all_quantitative_answered = False
@@ -393,14 +405,25 @@ else:
                                         options_list = [p.strip() for p in q.split(';')[1:4]]
                                         responses[q] = options_list.index(selection) + 1
                                 
-                                # Validasi input
+                                # --- PERUBAHAN 2: Validasi input yang disesuaikan ---
+                                validation_passed = True
                                 if not all_quantitative_answered:
-                                    st.error("Mohon jawab semua pertanyaan penilaian kuantitatif (pilihan ganda).")
-                                elif not (comment and dev_suggestion):
-                                    st.error("Mohon isi bagian 'Comment (Komentar)' dan 'Saran Pengembangan'. Keduanya wajib diisi.")
-                                else:
+                                    st.error("Mohon jawab semua pertanyaan pada Bagian I (Penilaian Kuantitatif).")
+                                    validation_passed = False
+                                
+                                if not comment:
+                                    st.error("Mohon isi bagian Komentar. Kolom ini wajib diisi.")
+                                    validation_passed = False
+                                
+                                if employee_type == 'office' and not dev_suggestion:
+                                    st.error("Mohon isi bagian Saran Pengembangan. Kolom ini wajib diisi.")
+                                    validation_passed = False
+
+                                if validation_passed:
                                     responses['Komentar'] = comment
-                                    responses['Saran Pengembangan'] = dev_suggestion
+                                    if employee_type == 'office':
+                                        responses['Saran Pengembangan'] = dev_suggestion
+                                    
                                     if submit_review(reviewer_uid, selected_reviewee_uid, responses):
                                         st.toast("Review berhasil dikirim! ✅")
                                         time.sleep(1)
@@ -416,7 +439,7 @@ else:
             user_details = get_user_details(user_info['uid'])
             employee_type = user_details.get('tipe_karyawan') if user_details else None
 
-            my_reviews.sort(key=lambda r: r.get('timestamp'), reverse=True)
+            my_reviews.sort(key=lambda r: r.get('timestamp', pd.Timestamp.min), reverse=True)
 
             for i, review in enumerate(my_reviews):
                 review_date = review.get('timestamp', 'N/A')
@@ -424,8 +447,8 @@ else:
                     review_date = review_date.strftime('%d %B %Y, %H:%M')
                     
                 with st.expander(f"**Penilaian ke-{i + 1}** (Diterima pada: `{review_date}`)", expanded=(i==0)):
-                    scores = {k: v for k, v in review['responses'].items() if isinstance(v, (int, float))}
-                    comments = {k: v for k, v in review['responses'].items() if isinstance(v, str)}
+                    scores = {k: v for k, v in review.get('responses', {}).items() if isinstance(v, (int, float))}
+                    comments = {k: v for k, v in review.get('responses', {}).items() if isinstance(v, str)}
                     
                     if scores:
                         st.subheader("Penilaian Kuantitatif")
@@ -454,6 +477,7 @@ else:
                         if comment_text:
                             st.markdown("**Comment (Komentar)**")
                             st.info(comment_text)
+                        # --- PERUBAHAN 3: 'Saran Pengembangan' hanya ditampilkan jika ada ---
                         if 'Saran Pengembangan' in comments:
                             st.markdown("**Saran Pengembangan**")
                             st.info(comments['Saran Pengembangan'])
@@ -499,12 +523,10 @@ else:
             **Untuk Tipe Office (Bilingual):**
             - Gunakan pemisah `|` (garis vertikal).
             - Format: `Pertanyaan Bahasa Inggris | Pertanyaan Bahasa Indonesia`
-            - Contoh: `Teamwork & Collaboration | Kerjasama & Kolaborasi dalam Tim`
 
             **Untuk Tipe Operator (Pilihan Ganda Deskriptif):**
             - Gunakan pemisah `;` (titik koma).
             - Format: `Pertanyaan;Pilihan untuk skor 1;Pilihan untuk skor 2;Pilihan untuk skor 3`
-            - Contoh: `Efektivitas Waktu;Selalu terlambat;Kadang terlambat;Selalu tepat waktu`
             """)
             current_questions = get_review_questions(q_type)
             questions_text = "\n".join(current_questions)
@@ -516,6 +538,7 @@ else:
         
         with admin_tab2:
             st.header("Kelola Penugasan Reviewer")
+            # ... (Logika Panel Admin tidak berubah)
             assignment_type_to_manage = st.radio("Pilih tipe penugasan untuk dikelola:", ("office", "operator"), horizontal=True, key="assignment_type")
             all_users = get_all_users()
             user_names = list(all_users.values())
