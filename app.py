@@ -446,9 +446,13 @@ else:
                                 Gunakan kerangka di bawah:
 
                                 • I Like : kekuatan & dampaknya (contoh proyek/tanggal)
+                                
                                 • I Wonder : area yang masih bisa ditajamkan (kenapa)
+                                
                                 • I Wish : harapan konkret 3-6 bulan ke depan
+                                
                                 Min. 120 karakter 
+                                
                                 • Fokus pada perilaku, bukan pribadi
                                 """)
                                 
@@ -458,6 +462,7 @@ else:
                                 Tulis apa–bagaimana–kapan.
 
                                 1️⃣ Skill Prioritas (hard/soft) 
+                                
                                 2️⃣ Metode (training, mentoring, proyek rotasi) 
                                 
                                 Contoh: “Pelatihan Power BI.”
