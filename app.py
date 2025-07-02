@@ -443,13 +443,24 @@ else:
                                 st.markdown("##### Comment (Komentar) (Wajib Diisi)")
                                 comment = st.text_area("comment_office", label_visibility="collapsed")
                                 st.caption("""
-                                Silakan masukan beberapa catatan yang perlu untuk diketahui karyawan ini, boleh juga menggunakan metode I like, I wonder, dan I wish dalam kolom komentar.
+                                Gunakan kerangka di bawah:
+
+                                • I Like : kekuatan & dampaknya (contoh proyek/tanggal)
+                                • I Wonder : area yang masih bisa ditajamkan (kenapa)
+                                • I Wish : harapan konkret 3-6 bulan ke depan
+                                Min. 120 karakter 
+                                • Fokus pada perilaku, bukan pribadi
                                 """)
                                 
                                 st.markdown("##### Saran Pengembangan (Wajib Diisi)")
                                 dev_suggestion = st.text_area("dev_suggestion_office", label_visibility="collapsed")
                                 st.caption("""
-                                Silakan masukan saran pengembangan untuk karyawan ini, dapat berupa arahan teknis atau jenis pelatihan yang perlu untuk diikuti oleh karyawan ini.
+                                Tulis apa–bagaimana–kapan.
+
+                                1️⃣ Skill Prioritas (hard/soft) 
+                                2️⃣ Metode (training, mentoring, proyek rotasi) 
+                                
+                                Contoh: “Pelatihan Power BI.”
                                 """)
                             
                             elif employee_type == 'operator':
