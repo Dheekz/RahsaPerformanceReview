@@ -290,7 +290,7 @@ if st.session_state.user_info is None:
 
     with login_tab:
         st.markdown("""
-        Berikut adalah Performance Review untuk periode **1 Januari 2025 - 30 Juni 2025** dan pelaksanaan penilaian akan dilakukan pada tanggal **1 - 10 Juli 2025**.
+        Berikut adalah Performance Review untuk periode **1 Januari 2025 - 30 Juni 2025** dan pelaksanaan penilaian akan dilakukan pada tanggal **4 - 13 Juli 2025**.
 
         **Catatan:**
         Silahkan login menggunakan Username dan Password yang sudah dibagikan ke email masing-masing:
