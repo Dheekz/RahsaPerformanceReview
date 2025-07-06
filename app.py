@@ -227,7 +227,7 @@ def get_all_users():
     """Mengambil semua pengguna dari koleksi 'users'."""
     try:
         users_ref = db.collection('users').stream()
-        return {user.id: user.to_dict().get('nama', 'Tanpa Nama') for user in users_ref}
+        return {user.id: user.to_dict() for user in users_ref} # Diubah untuk mengembalikan semua data
     except Exception as e:
         st.error(f"Gagal mengambil daftar pengguna: {e}")
         return {}
@@ -238,10 +238,12 @@ def get_all_assignments(assignment_type):
         assignments_ref = db.collection('review_assignments').where(filter=FieldFilter('assignment_type', '==', assignment_type)).stream()
         assignments_list = []
         all_users = get_all_users()
+        all_users_info = {uid: data.get('nama', 'Pengguna Dihapus') for uid, data in all_users.items()}
+
         for doc in assignments_ref:
             data = doc.to_dict()
-            reviewer_name = all_users.get(data.get('reviewer_uid'), 'Pengguna Dihapus')
-            reviewee_name = all_users.get(data.get('reviewee_uid'), 'Pengguna Dihapus')
+            reviewer_name = all_users_info.get(data.get('reviewer_uid'), 'Pengguna Dihapus')
+            reviewee_name = all_users_info.get(data.get('reviewee_uid'), 'Pengguna Dihapus')
             assignments_list.append({
                 'id': doc.id,
                 'reviewer_name': reviewer_name,
@@ -280,6 +282,49 @@ def delete_assignment(assignment_id):
     except Exception as e:
         st.error(f"Gagal menghapus penugasan: {e}")
         return False
+
+# --- TAMBAHAN BARU: Fungsi untuk mendapatkan status pengerjaan ---
+@st.cache_data(ttl=300) # Cache data selama 5 menit
+def get_review_completion_status(employee_type):
+    """Mengambil semua penugasan dan mengecek status pengerjaannya."""
+    try:
+        # 1. Ambil semua penugasan untuk tipe karyawan yang dipilih
+        assignments_ref = db.collection('review_assignments').where(filter=FieldFilter('assignment_type', '==', employee_type)).stream()
+        assignments = list(assignments_ref)
+
+        # 2. Ambil semua data pengguna untuk mapping nama
+        all_users = get_all_users()
+        user_names = {uid: data.get('nama', f"UID: {uid}") for uid, data in all_users.items()}
+        
+        # 3. Ambil semua review yang sudah masuk untuk pengecekan cepat
+        reviews_ref = db.collection('reviews').stream()
+        completed_reviews = {(doc.to_dict()['reviewer_uid'], doc.to_dict()['reviewee_uid']) for doc in reviews_ref}
+        
+        status_list = []
+        for doc in assignments:
+            assignment_data = doc.to_dict()
+            reviewer_uid = assignment_data.get('reviewer_uid')
+            reviewee_uid = assignment_data.get('reviewee_uid')
+            
+            # Cek status
+            status_key = (reviewer_uid, reviewee_uid)
+            if status_key in completed_reviews:
+                status = "✅ Selesai"
+            else:
+                status = "❌ Belum Mengerjakan"
+            
+            status_list.append({
+                "Reviewer": user_names.get(reviewer_uid, "N/A"),
+                "Reviewee": user_names.get(reviewee_uid, "N/A"),
+                "Status": status
+            })
+            
+        return pd.DataFrame(status_list)
+
+    except Exception as e:
+        st.error(f"Gagal memuat status pengerjaan: {e}")
+        return pd.DataFrame()
+
 
 # --- TAMPILAN APLIKASI ---
 
@@ -652,7 +697,9 @@ else:
 
     elif app_mode == "⚙️ Panel Admin" and is_admin:
         st.title("⚙️ Panel Admin")
-        admin_tab1, admin_tab2 = st.tabs(["📝 Kelola Pertanyaan Review", "🔗 Kelola Penugasan"])
+        # --- MODIFIKASI: Menambahkan tab baru untuk status pengerjaan ---
+        admin_tab1, admin_tab2, admin_tab3 = st.tabs(["📝 Kelola Pertanyaan", "🔗 Kelola Penugasan", "📊 Status Pengerjaan"])
+        
         with admin_tab1:
             st.header("Kelola Pertanyaan Performance Review")
             q_type = st.selectbox("Pilih tipe karyawan untuk dikelola:", ("office", "operator"), key="q_type")
@@ -677,26 +724,28 @@ else:
         
         with admin_tab2:
             st.header("Kelola Penugasan Reviewer")
-            # ... (Logika Panel Admin tidak berubah)
             assignment_type_to_manage = st.radio("Pilih tipe penugasan untuk dikelola:", ("office", "operator"), horizontal=True, key="assignment_type")
-            all_users = get_all_users()
-            user_names = list(all_users.values())
-            user_uids = list(all_users.keys())
+            
+            # --- MODIFIKASI: Mengambil nama dan UID secara terpisah ---
+            all_users_data = get_all_users()
+            user_names_map = {data['nama']: uid for uid, data in all_users_data.items() if 'nama' in data}
+            user_names_list = sorted(user_names_map.keys())
+
             with st.form("add_assignment_form"):
                 st.subheader(f"Tambah Penugasan Baru untuk Tipe: `{assignment_type_to_manage.capitalize()}`")
                 col1, col2 = st.columns(2)
                 with col1:
-                    reviewer_name = st.selectbox("Pilih Reviewer:", options=user_names, index=None, placeholder="Pilih nama...")
+                    reviewer_name = st.selectbox("Pilih Reviewer:", options=user_names_list, index=None, placeholder="Pilih nama...")
                 with col2:
-                    reviewee_name = st.selectbox("Pilih Reviewee:", options=user_names, index=None, placeholder="Pilih nama...")
+                    reviewee_name = st.selectbox("Pilih Reviewee:", options=user_names_list, index=None, placeholder="Pilih nama...")
                 submitted = st.form_submit_button("Tambahkan Penugasan")
                 if submitted:
                     if reviewer_name and reviewee_name:
                         if reviewer_name == reviewee_name:
                             st.error("Reviewer dan Reviewee tidak boleh orang yang sama.")
                         else:
-                            reviewer_uid = user_uids[user_names.index(reviewer_name)]
-                            reviewee_uid = user_uids[user_names.index(reviewee_name)]
+                            reviewer_uid = user_names_map[reviewer_name]
+                            reviewee_uid = user_names_map[reviewee_name]
                             if add_assignment(reviewer_uid, reviewee_uid, assignment_type_to_manage):
                                 st.rerun() 
                     else:
@@ -719,3 +768,37 @@ else:
                         if st.button("Hapus", key=f"del_{assignment['id']}", use_container_width=True):
                             delete_assignment(assignment['id'])
                             st.rerun()
+        
+        # --- TAMBAHAN BARU: Tab untuk menampilkan status pengerjaan ---
+        with admin_tab3:
+            st.header("Pantau Status Pengerjaan Review")
+            status_type = st.radio(
+                "Pilih tipe karyawan untuk ditampilkan:", 
+                ("office", "operator"), 
+                horizontal=True, 
+                key="status_type"
+            )
+
+            if st.button("🔄 Muat Ulang Data"):
+                # Menghapus cache agar data selalu terbaru saat tombol ditekan
+                st.cache_data.clear()
+
+            df_status = get_review_completion_status(status_type)
+
+            if df_status.empty:
+                st.info(f"Belum ada data penugasan atau review untuk tipe '{status_type}'.")
+            else:
+                # Menghitung statistik
+                total_assignments = len(df_status)
+                completed_count = len(df_status[df_status['Status'] == "✅ Selesai"])
+                completion_rate = (completed_count / total_assignments) * 100 if total_assignments > 0 else 0
+
+                st.metric(
+                    label=f"Progres Penyelesaian Tipe '{status_type.capitalize()}'",
+                    value=f"{completed_count} / {total_assignments}",
+                    delta=f"{completion_rate:.1f}% Selesai"
+                )
+                st.progress(completion_rate / 100)
+
+                # Menampilkan data dalam tabel
+                st.dataframe(df_status, use_container_width=True)
