@@ -62,6 +62,9 @@ if 'user_info' not in st.session_state:
     st.session_state.user_info = None
 if 'gemini_summary' not in st.session_state:
     st.session_state.gemini_summary = None
+# --- TAMBAHKAN BARIS DI BAWAH INI ---
+if 'download_df' not in st.session_state:
+    st.session_state.download_df = None
 
 # --- FUNGSI-FUNGSI BANTUAN ---
 
@@ -325,6 +328,89 @@ def get_review_completion_status(employee_type):
         st.error(f"Gagal memuat status pengerjaan: {e}")
         return pd.DataFrame()
 
+# --- TAMBAHAN BARU: Fungsi untuk mengunduh data CSV ---
+@st.cache_data(ttl=600) # Cache data selama 10 menit
+def prepare_review_data_for_download(employee_type):
+    """
+    Mengambil, memproses, dan memformat semua data review untuk tipe karyawan tertentu 
+    ke dalam DataFrame Pandas yang siap diunduh.
+    """
+    try:
+        # 1. Ambil semua data pengguna untuk mapping UID ke Nama
+        all_users = get_all_users()
+        user_names = {uid: data.get('nama', f"Pengguna Dihapus (UID: {uid})") for uid, data in all_users.items()}
+        user_types = {uid: data.get('tipe_karyawan') for uid, data in all_users.items()}
+
+        # 2. Ambil daftar pertanyaan kanonis untuk header kolom yang konsisten
+        questions = get_review_questions(employee_type)
+        if not questions:
+            st.warning(f"Tidak ditemukan daftar pertanyaan untuk tipe '{employee_type}'.")
+            return pd.DataFrame()
+            
+        question_headers = [f"Pertanyaan {i+1}" for i in range(len(questions))]
+
+        # 3. Ambil semua data review dari Firestore
+        reviews_ref = db.collection('reviews').stream()
+        processed_data = []
+
+        for review in reviews_ref:
+            review_data = review.to_dict()
+            reviewee_uid = review_data.get('reviewee_uid')
+            
+            # Filter hanya untuk tipe karyawan yang dipilih
+            if user_types.get(reviewee_uid) != employee_type:
+                continue
+
+            # Inisialisasi baris data
+            row = {}
+            row['Nama Reviewer'] = user_names.get(review_data.get('reviewer_uid'), "N/A")
+            row['Nama Reviewee'] = user_names.get(reviewee_uid, "N/A")
+
+            responses = review_data.get('responses', {})
+            
+            # 4. Map jawaban ke header pertanyaan yang sudah urut
+            for i, question_key in enumerate(questions):
+                header = question_headers[i]
+                # Cari skor untuk pertanyaan ini di dalam response
+                score = responses.get(question_key, 'N/A') 
+                row[header] = score
+            
+            # 5. Ambil data kualitatif
+            row['Komentar'] = responses.get('Komentar', '')
+            if employee_type == 'office':
+                row['Saran Pengembangan'] = responses.get('Saran Pengembangan', '')
+
+            # 6. Format timestamp
+            timestamp = review_data.get('timestamp')
+            if hasattr(timestamp, 'strftime'):
+                row['Timestamp'] = timestamp.strftime('%Y-%m-%d %H:%M:%S')
+            else:
+                row['Timestamp'] = 'N/A'
+                
+            processed_data.append(row)
+
+        if not processed_data:
+            return pd.DataFrame()
+
+        # 7. Buat DataFrame dengan urutan kolom yang benar
+        base_columns = ['Nama Reviewer', 'Nama Reviewee']
+        qualitative_columns = ['Komentar']
+        if employee_type == 'office':
+            qualitative_columns.append('Saran Pengembangan')
+        
+        final_columns = base_columns + question_headers + qualitative_columns + ['Timestamp']
+        df = pd.DataFrame(processed_data)
+        
+        # Pastikan semua kolom ada, isi dengan N/A jika tidak ada
+        for col in final_columns:
+            if col not in df.columns:
+                df[col] = 'N/A'
+        
+        return df[final_columns] # Mengembalikan DataFrame dengan urutan kolom yang sudah ditentukan
+
+    except Exception as e:
+        st.error(f"Gagal memproses data untuk diunduh: {e}")
+        return pd.DataFrame()
 
 # --- TAMPILAN APLIKASI ---
 
@@ -696,109 +782,146 @@ else:
                             st.rerun()
 
     elif app_mode == "⚙️ Panel Admin" and is_admin:
-        st.title("⚙️ Panel Admin")
-        # --- MODIFIKASI: Menambahkan tab baru untuk status pengerjaan ---
-        admin_tab1, admin_tab2, admin_tab3 = st.tabs(["📝 Kelola Pertanyaan", "🔗 Kelola Penugasan", "📊 Status Pengerjaan"])
+    st.title("⚙️ Panel Admin")
+    # --- PERUBAHAN 1: Menambahkan tab ke-4 untuk unduh data ---
+    admin_tab1, admin_tab2, admin_tab3, admin_tab4 = st.tabs([
+        "📝 Kelola Pertanyaan", 
+        "🔗 Kelola Penugasan", 
+        "📊 Status Pengerjaan",
+        "📥 Unduh Hasil Review"
+    ])
+    
+    with admin_tab1:
+        st.header("Kelola Pertanyaan Performance Review")
+        q_type = st.selectbox("Pilih tipe karyawan untuk dikelola:", ("office", "operator"), key="q_type")
+        st.warning("""
+        **Penting: Aturan Format Pertanyaan**
+
+        **Untuk Tipe Office (Bilingual):**
+        - Gunakan pemisah `|` (garis vertikal).
+        - Format: `Pertanyaan Bahasa Inggris | Pertanyaan Bahasa Indonesia`
+
+        **Untuk Tipe Operator (Pilihan Ganda Deskriptif):**
+        - Gunakan pemisah `;` (titik koma).
+        - Format: `Pertanyaan;Pilihan untuk skor 1;Pilihan untuk skor 2;Pilihan untuk skor 3`
+        """)
+        current_questions = get_review_questions(q_type)
+        questions_text = "\n".join(current_questions)
+        st.markdown(f"**Edit pertanyaan untuk tipe `{q_type}` di bawah ini (satu pertanyaan per baris):**")
+        new_questions_text = st.text_area("Daftar Pertanyaan:", value=questions_text, height=400, key=f"questions_{q_type}")
+        if st.button("Simpan Perubahan Pertanyaan", key=f"save_{q_type}"):
+            updated_questions_list = [line.strip() for line in new_questions_text.split("\n") if line.strip()]
+            update_review_questions(q_type, updated_questions_list)
+    
+    with admin_tab2:
+        st.header("Kelola Penugasan Reviewer")
+        assignment_type_to_manage = st.radio("Pilih tipe penugasan untuk dikelola:", ("office", "operator"), horizontal=True, key="assignment_type")
         
-        with admin_tab1:
-            st.header("Kelola Pertanyaan Performance Review")
-            q_type = st.selectbox("Pilih tipe karyawan untuk dikelola:", ("office", "operator"), key="q_type")
-            st.warning("""
-            **Penting: Aturan Format Pertanyaan**
+        all_users_data = get_all_users()
+        user_names_map = {data['nama']: uid for uid, data in all_users_data.items() if 'nama' in data}
+        user_names_list = sorted(user_names_map.keys())
 
-            **Untuk Tipe Office (Bilingual):**
-            - Gunakan pemisah `|` (garis vertikal).
-            - Format: `Pertanyaan Bahasa Inggris | Pertanyaan Bahasa Indonesia`
-
-            **Untuk Tipe Operator (Pilihan Ganda Deskriptif):**
-            - Gunakan pemisah `;` (titik koma).
-            - Format: `Pertanyaan;Pilihan untuk skor 1;Pilihan untuk skor 2;Pilihan untuk skor 3`
-            """)
-            current_questions = get_review_questions(q_type)
-            questions_text = "\n".join(current_questions)
-            st.markdown(f"**Edit pertanyaan untuk tipe `{q_type}` di bawah ini (satu pertanyaan per baris):**")
-            new_questions_text = st.text_area("Daftar Pertanyaan:", value=questions_text, height=400, key=f"questions_{q_type}")
-            if st.button("Simpan Perubahan Pertanyaan", key=f"save_{q_type}"):
-                updated_questions_list = [line.strip() for line in new_questions_text.split("\n") if line.strip()]
-                update_review_questions(q_type, updated_questions_list)
-        
-        with admin_tab2:
-            st.header("Kelola Penugasan Reviewer")
-            assignment_type_to_manage = st.radio("Pilih tipe penugasan untuk dikelola:", ("office", "operator"), horizontal=True, key="assignment_type")
-            
-            # --- MODIFIKASI: Mengambil nama dan UID secara terpisah ---
-            all_users_data = get_all_users()
-            user_names_map = {data['nama']: uid for uid, data in all_users_data.items() if 'nama' in data}
-            user_names_list = sorted(user_names_map.keys())
-
-            with st.form("add_assignment_form"):
-                st.subheader(f"Tambah Penugasan Baru untuk Tipe: `{assignment_type_to_manage.capitalize()}`")
-                col1, col2 = st.columns(2)
-                with col1:
-                    reviewer_name = st.selectbox("Pilih Reviewer:", options=user_names_list, index=None, placeholder="Pilih nama...")
-                with col2:
-                    reviewee_name = st.selectbox("Pilih Reviewee:", options=user_names_list, index=None, placeholder="Pilih nama...")
-                submitted = st.form_submit_button("Tambahkan Penugasan")
-                if submitted:
-                    if reviewer_name and reviewee_name:
-                        if reviewer_name == reviewee_name:
-                            st.error("Reviewer dan Reviewee tidak boleh orang yang sama.")
-                        else:
-                            reviewer_uid = user_names_map[reviewer_name]
-                            reviewee_uid = user_names_map[reviewee_name]
-                            if add_assignment(reviewer_uid, reviewee_uid, assignment_type_to_manage):
-                                st.rerun() 
+        with st.form("add_assignment_form"):
+            st.subheader(f"Tambah Penugasan Baru untuk Tipe: `{assignment_type_to_manage.capitalize()}`")
+            col1, col2 = st.columns(2)
+            with col1:
+                reviewer_name = st.selectbox("Pilih Reviewer:", options=user_names_list, index=None, placeholder="Pilih nama...")
+            with col2:
+                reviewee_name = st.selectbox("Pilih Reviewee:", options=user_names_list, index=None, placeholder="Pilih nama...")
+            submitted = st.form_submit_button("Tambahkan Penugasan")
+            if submitted:
+                if reviewer_name and reviewee_name:
+                    if reviewer_name == reviewee_name:
+                        st.error("Reviewer dan Reviewee tidak boleh orang yang sama.")
                     else:
-                        st.warning("Harap pilih Reviewer dan Reviewee.")
-            st.divider()
-            st.subheader(f"Daftar Penugasan Saat Ini (Tipe: `{assignment_type_to_manage.capitalize()}`)")
-            assignments = get_all_assignments(assignment_type_to_manage)
-            if not assignments:
-                st.info("Belum ada penugasan yang dibuat untuk tipe ini.")
-            else:
-                for assignment in assignments:
-                    col1, col2, col3, col4 = st.columns([3, 1, 3, 1])
-                    with col1:
-                        st.write(f"**{assignment['reviewer_name']}**")
-                    with col2:
-                        st.write("➔")
-                    with col3:
-                        st.write(f"**{assignment['reviewee_name']}**")
-                    with col4:
-                        if st.button("Hapus", key=f"del_{assignment['id']}", use_container_width=True):
-                            delete_assignment(assignment['id'])
-                            st.rerun()
-        
-        # --- TAMBAHAN BARU: Tab untuk menampilkan status pengerjaan ---
-        with admin_tab3:
-            st.header("Pantau Status Pengerjaan Review")
-            status_type = st.radio(
-                "Pilih tipe karyawan untuk ditampilkan:", 
-                ("office", "operator"), 
-                horizontal=True, 
-                key="status_type"
+                        reviewer_uid = user_names_map[reviewer_name]
+                        reviewee_uid = user_names_map[reviewee_name]
+                        if add_assignment(reviewer_uid, reviewee_uid, assignment_type_to_manage):
+                            st.rerun() 
+                else:
+                    st.warning("Harap pilih Reviewer dan Reviewee.")
+        st.divider()
+        st.subheader(f"Daftar Penugasan Saat Ini (Tipe: `{assignment_type_to_manage.capitalize()}`)")
+        assignments = get_all_assignments(assignment_type_to_manage)
+        if not assignments:
+            st.info("Belum ada penugasan yang dibuat untuk tipe ini.")
+        else:
+            for assignment in assignments:
+                col1, col2, col3, col4 = st.columns([3, 1, 3, 1])
+                with col1: st.write(f"**{assignment['reviewer_name']}**")
+                with col2: st.write("➔")
+                with col3: st.write(f"**{assignment['reviewee_name']}**")
+                with col4:
+                    if st.button("Hapus", key=f"del_{assignment['id']}", use_container_width=True):
+                        delete_assignment(assignment['id'])
+                        st.rerun()
+    
+    with admin_tab3:
+        st.header("Pantau Status Pengerjaan Review")
+        status_type = st.radio(
+            "Pilih tipe karyawan untuk ditampilkan:", 
+            ("office", "operator"), 
+            horizontal=True, 
+            key="status_type"
+        )
+
+        if st.button("🔄 Muat Ulang Data"):
+            st.cache_data.clear()
+
+        df_status = get_review_completion_status(status_type)
+
+        if df_status.empty:
+            st.info(f"Belum ada data penugasan atau review untuk tipe '{status_type}'.")
+        else:
+            total_assignments = len(df_status)
+            completed_count = len(df_status[df_status['Status'] == "✅ Selesai"])
+            completion_rate = (completed_count / total_assignments) * 100 if total_assignments > 0 else 0
+
+            st.metric(
+                label=f"Progres Penyelesaian Tipe '{status_type.capitalize()}'",
+                value=f"{completed_count} / {total_assignments}",
+                delta=f"{completion_rate:.1f}% Selesai"
             )
+            st.progress(completion_rate / 100)
+            st.dataframe(df_status, use_container_width=True)
 
-            if st.button("🔄 Muat Ulang Data"):
-                # Menghapus cache agar data selalu terbaru saat tombol ditekan
-                st.cache_data.clear()
+    # --- PERUBAHAN 2: Kode untuk Tab Unduh Data ---
+    with admin_tab4:
+        st.header("Unduh Data Hasil Review")
+        st.info("Pilih tipe karyawan, proses data, lalu unduh file CSV yang dihasilkan.")
 
-            df_status = get_review_completion_status(status_type)
+        download_type = st.radio(
+            "Pilih tipe data untuk diunduh:",
+            ("office", "operator"),
+            horizontal=True,
+            key="download_type",
+            on_change=lambda: st.session_state.update(download_df=None) # Reset saat tipe diganti
+        )
 
-            if df_status.empty:
-                st.info(f"Belum ada data penugasan atau review untuk tipe '{status_type}'.")
-            else:
-                # Menghitung statistik
-                total_assignments = len(df_status)
-                completed_count = len(df_status[df_status['Status'] == "✅ Selesai"])
-                completion_rate = (completed_count / total_assignments) * 100 if total_assignments > 0 else 0
-
-                st.metric(
-                    label=f"Progres Penyelesaian Tipe '{status_type.capitalize()}'",
-                    value=f"{completed_count} / {total_assignments}",
-                    delta=f"{completion_rate:.1f}% Selesai"
-                )
-                st.progress(completion_rate / 100)
-
-                # Menampilkan data dalam tabel
-                st.dataframe(df_status, use_container_width=True)
+        if st.button(f"Proses Data Review Tipe '{download_type.capitalize()}'"):
+            with st.spinner(f"Mengambil dan memformat data '{download_type}'..."):
+                # Panggil fungsi yang sudah kita buat
+                df = prepare_review_data_for_download(download_type)
+                if not df.empty:
+                    st.session_state.download_df = df
+                    st.success(f"Data berhasil diproses! Ditemukan {len(df)} record. Klik tombol di bawah untuk mengunduh.")
+                else:
+                    st.session_state.download_df = None
+                    st.warning(f"Tidak ada data review yang ditemukan untuk tipe '{download_type}'.")
+        
+        # Tombol unduh hanya akan muncul jika data sudah siap di session_state
+        if st.session_state.download_df is not None:
+            df_to_download = st.session_state.download_df
+            
+            st.dataframe(df_to_download.head(), use_container_width=True) # Tampilkan preview 5 baris pertama
+            
+            # Konversi DataFrame ke format CSV
+            csv = df_to_download.to_csv(index=False).encode('utf-8')
+            
+            st.download_button(
+               label="📥 Unduh File CSV",
+               data=csv,
+               file_name=f'hasil_review_{download_type}_{pd.Timestamp.now().strftime("%Y%m%d")}.csv',
+               mime='text/csv',
+               use_container_width=True
+            )
