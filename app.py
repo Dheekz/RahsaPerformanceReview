@@ -781,7 +781,7 @@ else:
                             time.sleep(1)
                             st.rerun()
 
-    elif app_mode == "⚙️ Panel Admin" and is_admin:
+elif app_mode == "⚙️ Panel Admin" and is_admin:
     st.title("⚙️ Panel Admin")
     # --- PERUBAHAN 1: Menambahkan tab ke-4 untuk unduh data ---
     admin_tab1, admin_tab2, admin_tab3, admin_tab4 = st.tabs([
