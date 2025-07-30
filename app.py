@@ -886,9 +886,10 @@ else:
                 st.dataframe(df_status, use_container_width=True)
     
         # --- PERUBAHAN 2: Kode untuk Tab Unduh Data ---
+        # --- PERUBAIKAN: Kode untuk Tab Unduh Data dengan Output Excel ---
         with admin_tab4:
             st.header("Unduh Data Hasil Review")
-            st.info("Pilih tipe karyawan, proses data, lalu unduh file CSV yang dihasilkan.")
+            st.info("Pilih tipe karyawan, proses data, lalu unduh file Excel (.xlsx) yang dihasilkan. Format ini lebih aman untuk data teks yang kompleks.")
     
             download_type = st.radio(
                 "Pilih tipe data untuk diunduh:",
@@ -900,7 +901,7 @@ else:
     
             if st.button(f"Proses Data Review Tipe '{download_type.capitalize()}'"):
                 with st.spinner(f"Mengambil dan memformat data '{download_type}'..."):
-                    # Panggil fungsi yang sudah kita buat
+                    # Panggil fungsi yang sama, tidak ada perubahan di sini
                     df = prepare_review_data_for_download(download_type)
                     if not df.empty:
                         st.session_state.download_df = df
@@ -915,14 +916,21 @@ else:
                 
                 st.dataframe(df_to_download.head(), use_container_width=True) # Tampilkan preview 5 baris pertama
                 
-                # Konversi DataFrame ke format CSV
-                csv = df_to_download.to_csv(index=False).encode('utf-8')
-                
+                # --- PERUBAHAN UTAMA DI SINI ---
+                # 1. Konversi DataFrame ke format Excel di dalam memori (bytes)
+                from io import BytesIO
+                output = BytesIO()
+                with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                    df_to_download.to_excel(writer, index=False, sheet_name='Hasil Review')
+                excel_data = output.getvalue()
+                # --- AKHIR PERUBAHAN UTAMA ---
+    
+                # 2. Perbarui st.download_button untuk file Excel
                 st.download_button(
-                   label="📥 Unduh File CSV",
-                   data=csv,
-                   file_name=f'hasil_review_{download_type}_{pd.Timestamp.now().strftime("%Y%m%d")}.csv',
-                   mime='text/csv',
+                   label="📥 Unduh File Excel",
+                   data=excel_data, # Gunakan data Excel yang sudah dalam bentuk bytes
+                   file_name=f'hasil_review_{download_type}_{pd.Timestamp.now().strftime("%Y%m%d")}.xlsx', # Ubah ekstensi file ke .xlsx
+                   mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', # MIME type untuk file .xlsx
                    use_container_width=True
                 )
 
