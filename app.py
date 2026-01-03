@@ -421,7 +421,7 @@ if st.session_state.user_info is None:
 
     with login_tab:
         st.markdown("""
-        Berikut adalah Performance Review Apps untuk periode **1 Januari 2025 - 30 Juni 2025** dan pelaksanaan penilaian akan dilakukan pada tanggal **4 - 13 Juli 2025**.
+        Berikut adalah Performance Review Apps untuk periode **1 Juli 2025 - 31 Desember 2025** dan pelaksanaan penilaian akan dilakukan pada tanggal **5 - 16 Januari 2026**.
 
         **Catatan:**
         Silahkan login menggunakan Username dan Password yang sudah dibagikan ke email masing-masing:
@@ -500,7 +500,7 @@ else:
 
     if app_mode == "📝 Beri Review":
         st.title("📝 Dashboard Performance Review")
-        st.info("Nama-nama karyawan di dropdown adalah rekan kerja yang perlu teman-teman beri penilaian. Silakan pilih nama yang tersedia untuk memberikan penilaian. Nama yang sudah dinilai akan otomatis hilang dari daftar.")
+        st.info("Nama-nama karyawan di dropdown adalah rekan kerja yang perlu teman-teman beri penilaian. Penilaian mencakup atasan langsung (supervisor), bawahan (subordinate), dan rekan satu tim (peers). Beberapa karyawan juga diminta menilai 1 orang dari luar timnya, sesuai pembagian yang telah ditentukan.")
         reviewer_uid = user_info['uid']
         all_assigned_reviewees = get_assigned_reviewees(reviewer_uid)
         reviewed_uids = get_reviewed_uids(reviewer_uid)
@@ -572,31 +572,24 @@ else:
                             # --- PERUBAHAN 1: Logika kondisional untuk Komentar & Saran Pengembangan ---
                             if employee_type == 'office':
                                 st.markdown("##### Comment (Komentar) (Wajib Diisi)")
-                                comment = st.text_area("comment_office", label_visibility="collapsed")
+                                comment = st.text_area("comment_office", label_visibility="collapsed",placeholder="Aturan Pengisian click tanda tanya kecil disamping",help="Ketentuan:\n1. Harus memberikan catatan yang berarti untuk pengembangan karyawan\n2. Tidak menyebutkan nama karyawan → diganti dengan 'Karyawan ini'\n3. Tidak boleh tidak diisi atau dikosongkan")
                                 st.caption("""
-                                Gunakan kerangka di bawah:
+                                Comment:
 
-                                • I Like : kekuatan & dampaknya (contoh proyek/tanggal)
+                                Silakan masukan beberapa catatan yang perlu untuk diketahui karyawan ini, boleh juga menggunakan metode I like (apa yang saya suka dari kekuatan karyawan ini & dampaknya), I wonder (area apa yang menurut saya masih bisa ditajamkan), dan I wish (apa harapan konkret saya untuk karyawan ini, fokus pada perilaku, bukan pribadi)
                                 
-                                • I Wonder : area yang masih bisa ditajamkan (kenapa)
+                                Contoh: Karyawan ini sangat positif dalam bekerja baik secara individu maupun dalam tim. Ia menyelesaikan pekerjaannya dengan cepat dan berkualitas. Akan baik jika karyawan ini bisa lebih menguasai tentang metode-metode yang mendukung pekerjaannya.
                                 
-                                • I Wish : harapan konkret 3-6 bulan ke depan
-                                
-                                Min. 120 karakter 
-                                
-                                • Fokus pada perilaku, bukan pribadi
                                 """)
                                 
                                 st.markdown("##### Saran Pengembangan (Wajib Diisi)")
                                 dev_suggestion = st.text_area("dev_suggestion_office", label_visibility="collapsed")
                                 st.caption("""
-                                Tulis apa–bagaimana–kapan.
+                                Saran Pengembangan:
 
-                                1️⃣ Skill Prioritas (hard/soft) 
+                                Silakan masukan saran pengembangan untuk karyawan ini, dapat berupa arahan teknis atau jenis pelatihan yang perlu untuk diikuti oleh karyawan ini. Sertakan skill prioritas dan metode pengembangan (training, mentoring, proyek rotasi).
                                 
-                                2️⃣ Metode (training, mentoring, proyek rotasi) 
-                                
-                                Contoh: “Pelatihan Power BI.”
+                                Contoh: Karyawan ini akan baik jika mengikuti training Scrum dan Design Thinking. 
                                 """)
                             
                             elif employee_type == 'operator':
@@ -933,4 +926,5 @@ else:
                    mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', # MIME type untuk file .xlsx
                    use_container_width=True
                 )
+
 
