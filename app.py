@@ -7,7 +7,7 @@ from firebase_admin import credentials, firestore, auth
 from google.cloud.firestore_v1.base_query import FieldFilter
 import pandas as pd
 import time
-import google.generativeai as genai
+import google.genai as genai
 from config import API_KEY
 
 # --- KONFIGURASI DAN INISIALISASI ---
@@ -926,5 +926,6 @@ else:
                    mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', # MIME type untuk file .xlsx
                    use_container_width=True
                 )
+
 
 
