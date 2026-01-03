@@ -1,5 +1,6 @@
 streamlit
 firebase-admin
 pandas
-google-generativeai
+google-genai
 openpyxl
+
