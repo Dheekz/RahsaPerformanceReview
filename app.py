@@ -7,7 +7,7 @@ from firebase_admin import credentials, firestore, auth
 from google.cloud.firestore_v1.base_query import FieldFilter
 import pandas as pd
 import time
-from google import genai
+import google.generativeai as genai
 from config import API_KEY
 
 # --- KONFIGURASI DAN INISIALISASI ---
@@ -49,9 +49,9 @@ if not API_KEY or API_KEY == "MASUKKAN_API_KEY_ANDA_DI_SINI":
     st.warning("API Key Gemini belum diatur di config.py. Fitur rangkuman AI tidak akan tersedia.", icon="⚠️")
 else:
     try:
-        client = genai.Client(api_key=API_KEY)
-        generation_model = client.models.generate_content('gemini-2.5-flash')
-        embedding_model = client.models.embed_content('models/embedding-001') # Tidak digunakan, tapi didefinisikan
+        genai.configure(api_key=API_KEY)
+        generation_model = genai.GenerativeModel('gemini-2.5-flash')
+        embedding_model = genai.GenerativeModel('models/embedding-001') # Tidak digunakan, tapi didefinisikan
     except Exception as e:
         st.error(f"Gagal mengkonfigurasi Gemini API: {e}")
         st.stop()
@@ -926,6 +926,7 @@ else:
                    mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', # MIME type untuk file .xlsx
                    use_container_width=True
                 )
+
 
 
 
