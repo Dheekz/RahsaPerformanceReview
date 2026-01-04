@@ -572,7 +572,7 @@ else:
                             # --- PERUBAHAN 1: Logika kondisional untuk Komentar & Saran Pengembangan ---
                             if employee_type == 'office':
                                 st.markdown("##### Comment (Komentar) (Wajib Diisi)")
-                                comment = st.text_area("comment_office", label_visibility="collapsed",placeholder="Aturan Pengisian click tanda tanya kecil disamping",help="Ketentuan:\n1. Harus memberikan catatan yang berarti untuk pengembangan karyawan\n2. Tidak menyebutkan nama karyawan → diganti dengan 'Karyawan ini'\n3. Tidak boleh tidak diisi atau dikosongkan")
+                                comment = st.text_area("comment_office", label_visibility="collapsed",placeholder="Ketentuan:\n1. Harus memberikan catatan yang berarti untuk pengembangan karyawan\n2. Tidak menyebutkan nama karyawan → diganti dengan 'Karyawan ini'\n3. Tidak boleh tidak diisi atau dikosongkan")
                                 st.caption("""
                                 Comment:
 
@@ -926,6 +926,7 @@ else:
                    mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', # MIME type untuk file .xlsx
                    use_container_width=True
                 )
+
 
 
 
