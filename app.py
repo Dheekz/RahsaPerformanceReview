@@ -421,7 +421,7 @@ if st.session_state.user_info is None:
 
     with login_tab:
         st.markdown("""
-        Berikut adalah Performance Review Apps untuk periode **1 Juli 2025 - 31 Desember 2025** dan pelaksanaan penilaian akan dilakukan pada tanggal **5 - 16 Januari 2026**.
+        Berikut adalah Performance Review Apps untuk periode **1 Juli 2025 - 31 Desember 2025** dan pelaksanaan penilaian akan dilakukan pada tanggal **7 - 18 Januari 2026**.
 
         **Catatan:**
         Silahkan login menggunakan Username dan Password yang sudah dibagikan ke email masing-masing:
@@ -926,6 +926,7 @@ else:
                    mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', # MIME type untuk file .xlsx
                    use_container_width=True
                 )
+
 
 
 
