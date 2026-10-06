@@ -1,6 +1,3 @@
-# app.py
-# Jalankan dengan: streamlit run app.py
-
 import streamlit as st
 import firebase_admin
 from firebase_admin import credentials, firestore, auth
@@ -10,28 +7,20 @@ import time
 import google.generativeai as genai
 from config import API_KEY
 
-# --- KONFIGURASI DAN INISIALISASI ---
-
 st.set_page_config(page_title="Aplikasi Performance Review PT. Bhinneka Rahsa Nusantara", page_icon="📊", layout="wide")
 
-# --- INISIALISASI FIREBASE (LOGIKA BARU YANG LEBIH ROBUST) ---
 try:
     # Coba inisialisasi hanya jika belum ada
     firebase_admin.get_app()
 except ValueError:
     try:
-        # --- PERBAIKAN UTAMA DI SINI ---
-        # Ambil kredensial dari secrets.toml. Objek ini bersifat read-only.
         creds_from_secrets = st.secrets["firebase_credentials"]
         
-        # Buat salinan yang bisa diubah (mutable copy) dalam bentuk dictionary
         creds_dict = dict(creds_from_secrets)
 
-        # Perbaiki format private_key di dalam salinan dictionary
         if 'private_key' in creds_dict:
             creds_dict['private_key'] = creds_dict['private_key'].replace('\\n', '\n')
 
-        # Inisialisasi Firebase menggunakan dictionary yang sudah diperbaiki
         cred = credentials.Certificate(creds_dict)
         firebase_admin.initialize_app(cred)
 
@@ -43,7 +32,7 @@ except ValueError:
 
 # --- PERUBAHAN: Konfigurasi Gemini API dari config.py ---
 generation_model = None
-embedding_model = None # Disiapkan sesuai permintaan
+embedding_model = None 
 
 if not API_KEY or API_KEY == "MASUKKAN_API_KEY_ANDA_DI_SINI":
     st.warning("API Key Gemini belum diatur di config.py. Fitur rangkuman AI tidak akan tersedia.", icon="⚠️")
@@ -62,14 +51,10 @@ if 'user_info' not in st.session_state:
     st.session_state.user_info = None
 if 'gemini_summary' not in st.session_state:
     st.session_state.gemini_summary = None
-# --- TAMBAHKAN BARIS DI BAWAH INI ---
 if 'download_df' not in st.session_state:
     st.session_state.download_df = None
 
-# --- FUNGSI-FUNGSI BANTUAN ---
-
 def register_user(employee_type, data):
-    """Mendaftarkan pengguna baru ke Auth dan Firestore."""
     username = data['username']
     password = data['password']
     
@@ -117,7 +102,6 @@ def get_assigned_reviewees(reviewer_uid):
     except Exception as e: return {}
 
 def get_reviewed_uids(reviewer_uid):
-    """Mengambil set UID dari reviewee yang sudah direview oleh reviewer."""
     try:
         reviews_ref = db.collection('reviews').where(filter=FieldFilter('reviewer_uid', '==', reviewer_uid)).stream()
         return {doc.to_dict().get('reviewee_uid') for doc in reviews_ref}
@@ -157,13 +141,11 @@ def get_my_reviews(reviewee_uid):
     except Exception as e: return []
 
 def has_user_submitted_feedback(uid):
-    """Mengecek apakah user sudah pernah submit feedback aplikasi."""
     user_details = get_user_details(uid)
     return user_details.get('app_feedback_submitted', False)
 
 @firestore.transactional
 def submit_app_feedback_transaction(transaction, uid, user_nama, rating, suggestion):
-    """Menyimpan feedback dan update status user dalam satu transaksi."""
     feedback_ref = db.collection('app_feedback').document()
     transaction.set(feedback_ref, {
         'user_uid': uid,
@@ -176,7 +158,6 @@ def submit_app_feedback_transaction(transaction, uid, user_nama, rating, suggest
     transaction.update(user_ref, {'app_feedback_submitted': True})
 
 def process_app_feedback_submission(uid, user_nama, rating, suggestion):
-    """Wrapper untuk memanggil transaksi."""
     try:
         transaction = db.transaction()
         submit_app_feedback_transaction(transaction, uid, user_nama, rating, suggestion)
@@ -187,7 +168,6 @@ def process_app_feedback_submission(uid, user_nama, rating, suggestion):
         return False
 
 def generate_summary_with_gemini(all_comments):
-    """Fungsi untuk memanggil Gemini AI dan membuat rangkuman."""
     # PERUBAHAN: Memastikan model sudah dikonfigurasi sebelum digunakan
     if not generation_model:
         st.error("Model AI tidak berhasil dikonfigurasi. Tidak dapat membuat rangkuman.")
@@ -219,7 +199,6 @@ def generate_summary_with_gemini(all_comments):
     """
     
     try:
-        # PERUBAHAN: Menggunakan model yang sudah dikonfigurasi secara global
         response = generation_model.generate_content(prompt)
         return response.text
     except Exception as e:
@@ -227,7 +206,6 @@ def generate_summary_with_gemini(all_comments):
         return None
 
 def get_all_users():
-    """Mengambil semua pengguna dari koleksi 'users'."""
     try:
         users_ref = db.collection('users').stream()
         return {user.id: user.to_dict() for user in users_ref} # Diubah untuk mengembalikan semua data
@@ -236,7 +214,6 @@ def get_all_users():
         return {}
 
 def get_all_assignments(assignment_type):
-    """Mengambil semua penugasan yang ada berdasarkan tipe."""
     try:
         assignments_ref = db.collection('review_assignments').where(filter=FieldFilter('assignment_type', '==', assignment_type)).stream()
         assignments_list = []
@@ -258,7 +235,6 @@ def get_all_assignments(assignment_type):
         return []
 
 def add_assignment(reviewer_uid, reviewee_uid, assignment_type):
-    """Menambahkan penugasan baru dengan tipe dan memeriksa duplikat."""
     try:
         existing_ref = db.collection('review_assignments').where(filter=FieldFilter('reviewer_uid', '==', reviewer_uid)).where(filter=FieldFilter('reviewee_uid', '==', reviewee_uid)).where(filter=FieldFilter('assignment_type', '==', assignment_type)).limit(1).stream()
         if len(list(existing_ref)) > 0:
@@ -277,7 +253,6 @@ def add_assignment(reviewer_uid, reviewee_uid, assignment_type):
         return False
 
 def delete_assignment(assignment_id):
-    """Menghapus penugasan berdasarkan ID dokumennya."""
     try:
         db.collection('review_assignments').document(assignment_id).delete()
         st.success("Penugasan berhasil dihapus.")
@@ -286,10 +261,8 @@ def delete_assignment(assignment_id):
         st.error(f"Gagal menghapus penugasan: {e}")
         return False
 
-# --- TAMBAHAN BARU: Fungsi untuk mendapatkan status pengerjaan ---
 @st.cache_data(ttl=300) # Cache data selama 5 menit
 def get_review_completion_status(employee_type):
-    """Mengambil semua penugasan dan mengecek status pengerjaannya."""
     try:
         # 1. Ambil semua penugasan untuk tipe karyawan yang dipilih
         assignments_ref = db.collection('review_assignments').where(filter=FieldFilter('assignment_type', '==', employee_type)).stream()
@@ -328,13 +301,8 @@ def get_review_completion_status(employee_type):
         st.error(f"Gagal memuat status pengerjaan: {e}")
         return pd.DataFrame()
 
-# --- TAMBAHAN BARU: Fungsi untuk mengunduh data CSV ---
 @st.cache_data(ttl=600) # Cache data selama 10 menit
 def prepare_review_data_for_download(employee_type):
-    """
-    Mengambil, memproses, dan memformat semua data review untuk tipe karyawan tertentu 
-    ke dalam DataFrame Pandas yang siap diunduh.
-    """
     try:
         # 1. Ambil semua data pengguna untuk mapping UID ke Nama
         all_users = get_all_users()
@@ -443,13 +411,11 @@ if st.session_state.user_info is None:
             if st.form_submit_button("Login"):
                 if username and password:
                     try:
-                        # Logika login disederhanakan untuk contoh
                         users_ref = db.collection('users').where(filter=FieldFilter('username', '==', username)).limit(1).stream()
                         if not (user_docs := list(users_ref)):
                             st.error("Username tidak ditemukan atau password salah.")
                         else:
                             user_data = user_docs[0].to_dict()
-                            # Di aplikasi nyata, verifikasi password harus dilakukan di sisi server
                             st.session_state.user_info = { 
                                 "uid": user_data.get('uid'), 
                                 "email": user_data.get('email'), 
@@ -569,7 +535,6 @@ else:
                             # --- BAGIAN II: PENILAIAN KUALITATIF (TERGANTUNG TIPE) ---
                             st.markdown(f"**Bagian II: Penilaian Kualitatif**")
 
-                            # --- PERUBAHAN 1: Logika kondisional untuk Komentar & Saran Pengembangan ---
                             if employee_type == 'office':
                                 st.markdown("##### Comment (Komentar) (Wajib Diisi)")
                                 comment = st.text_area("comment_office", label_visibility="collapsed",placeholder="Ketentuan:\n1. Harus memberikan catatan yang berarti untuk pengembangan karyawan\n2. Tidak menyebutkan nama karyawan → diganti dengan 'Karyawan ini'\n3. Tidak boleh tidak diisi atau dikosongkan")
@@ -617,7 +582,6 @@ else:
                                         options_list = [p.strip() for p in q.split(';')[1:4]]
                                         responses[q] = options_list.index(selection) + 1
                                 
-                                # --- PERUBAHAN 2: Validasi input yang disesuaikan ---
                                 validation_passed = True
                                 if not all_quantitative_answered:
                                     st.error("Mohon jawab semua pertanyaan pada Bagian I (Penilaian Kuantitatif).")
@@ -653,7 +617,6 @@ else:
 
             my_reviews.sort(key=lambda r: r.get('timestamp', pd.Timestamp.min), reverse=True)
             
-            # --- PERBAIKAN: Inisialisasi di luar loop ---
             question_scores = {}
             total_scores_list = []
             all_comments_text = ""
@@ -733,7 +696,6 @@ else:
             else:
                 st.info("Tidak ada data penilaian kuantitatif untuk dihitung rata-ratanya.")
             
-            # --- BAGIAN BARU: Tombol Generate Rangkuman AI ---
             st.header("Analisis Rangkuman dengan AI")
             
             if not generation_model:
@@ -776,7 +738,6 @@ else:
 
     elif app_mode == "⚙️ Panel Admin" and is_admin:
         st.title("⚙️ Panel Admin")
-        # --- PERUBAHAN 1: Menambahkan tab ke-4 untuk unduh data ---
         admin_tab1, admin_tab2, admin_tab3, admin_tab4 = st.tabs([
             "📝 Kelola Pertanyaan", 
             "🔗 Kelola Penugasan", 
@@ -878,8 +839,6 @@ else:
                 st.progress(completion_rate / 100)
                 st.dataframe(df_status, use_container_width=True)
     
-        # --- PERUBAHAN 2: Kode untuk Tab Unduh Data ---
-        # --- PERUBAIKAN: Kode untuk Tab Unduh Data dengan Output Excel ---
         with admin_tab4:
             st.header("Unduh Data Hasil Review")
             st.info("Pilih tipe karyawan, proses data, lalu unduh file Excel (.xlsx) yang dihasilkan. Format ini lebih aman untuk data teks yang kompleks.")
@@ -903,20 +862,17 @@ else:
                         st.session_state.download_df = None
                         st.warning(f"Tidak ada data review yang ditemukan untuk tipe '{download_type}'.")
             
-            # Tombol unduh hanya akan muncul jika data sudah siap di session_state
             if st.session_state.download_df is not None:
                 df_to_download = st.session_state.download_df
                 
                 st.dataframe(df_to_download.head(), use_container_width=True) # Tampilkan preview 5 baris pertama
                 
-                # --- PERUBAHAN UTAMA DI SINI ---
                 # 1. Konversi DataFrame ke format Excel di dalam memori (bytes)
                 from io import BytesIO
                 output = BytesIO()
                 with pd.ExcelWriter(output, engine='openpyxl') as writer:
                     df_to_download.to_excel(writer, index=False, sheet_name='Hasil Review')
                 excel_data = output.getvalue()
-                # --- AKHIR PERUBAHAN UTAMA ---
     
                 # 2. Perbarui st.download_button untuk file Excel
                 st.download_button(
